@@ -302,7 +302,9 @@ class WindowAttention(nn.Module):
                 attn = (attn + self.eps) / (attn.sum(dim=-1, keepdim=True) + self.eps)
 
         # If sparsification is enabled, select top-k attention values and save the corresponding indexes
-        if self.topk < self.window_size[0] * self.window_size[1]:
+        # Only run torch.topk when the sparse width actually shrinks. Equal-width
+        # sparse layers reuse previous indices.
+        if self.topk < attn.shape[-1]:
             topk_values, topk_indices = torch.topk(attn, self.topk, dim=-1, largest=True, sorted=False)
             attn = topk_values
             if pfa_indices[shift] is not None:
