@@ -18,7 +18,7 @@
 #
 # Examples:
 #   bash apply_grad_accum_patch.sh .
-#   bash apply_grad_accum_patch.sh /mnt/c/Users/teraw/Developer/research-sisr/PFT-SR
+#   bash apply_grad_accum_patch.sh /mnt/c/Users/teraw/Developer/research-sisr/ProMoD-SR
 #
 # YAML convention (keys under datasets.train, NOT under train):
 #   datasets:

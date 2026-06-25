@@ -8,7 +8,7 @@
 #SBATCH -t 00:30:00
 #SBATCH -A zz992004
 #SBATCH -J build_smm
-#SBATCH -o /project/zz992000-zdevb/zz992004/ub086/research-sisr/PFT-SR/scripts/logs/build_smm_%j.out
+#SBATCH -o /project/zz992000-zdevb/zz992004/ub086/research-sisr/ProMoD-SR/scripts/logs/build_smm_%j.out
 set -e
 
 ml purge
@@ -22,7 +22,7 @@ echo "CUDA_HOME: $CUDA_HOME"
 echo "nvcc: $(which nvcc)"
 $PYTHON -c "import torch; print('torch:', torch.__version__, '| CUDA:', torch.cuda.is_available())"
 
-cd $PROJ/PFT-SR/ops_smm
+cd $PROJ/ProMoD-SR/ops_smm
 $PYTHON setup.py install
 
 echo "smm_cuda built successfully."

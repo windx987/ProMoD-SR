@@ -1,7 +1,7 @@
 #!/bin/bash
 # Run this on the LANTA login node ONCE to set up the project.
 # ssh -i ~/.ssh/mac_ed25519 ub086@transfer.lanta.nstda.or.th
-# then: bash /project/zz992000-zdevb/zz992004/ub086/research-sisr/PFT-SR/scripts/setup_lanta.sh
+# then: bash /project/zz992000-zdevb/zz992004/ub086/research-sisr/ProMoD-SR/scripts/setup_lanta.sh
 
 set -e
 
@@ -19,7 +19,7 @@ else
     exit 1
 fi
 
-PFT=$PROJ/PFT-SR
+PFT=$PROJ/ProMoD-SR
 RAW=$PROJ/raw_data
 echo "Env:  $PYTHON"
 echo "PROJ: $PROJ"

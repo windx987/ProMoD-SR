@@ -8,7 +8,7 @@
 #SBATCH -t 5-00:00:00
 #SBATCH -A zz992004
 #SBATCH -J promod_x2
-#SBATCH -o /project/zz992000-zdevb/zz992004/ub086/research-sisr/PFT-SR/scripts/logs/promod_x2_%j.out
+#SBATCH -o /project/zz992000-zdevb/zz992004/ub086/research-sisr/ProMoD-SR/scripts/logs/promod_x2_%j.out
 set -e
 
 ml purge
@@ -28,7 +28,7 @@ echo "Node:    $SLURMD_NODENAME"
 echo "GPUs:    $CUDA_VISIBLE_DEVICES"
 $PYTHON -c "import torch; print('torch:', torch.__version__, '| GPUs:', torch.cuda.device_count())"
 
-cd $PROJ/PFT-SR
+cd $PROJ/ProMoD-SR
 
 torchrun \
     --nproc_per_node=4 \
