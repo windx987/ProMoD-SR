@@ -70,6 +70,9 @@ class SRModel(BaseModel):
             raise ValueError('Both pixel and perceptual losses are None.')
 
         # set up optimizers and schedulers
+        # gradient accumulation -- reads from opt['datasets']['train']
+        _ds_train = self.opt.get('datasets', {}).get('train', {})
+        self.accum_iters = _ds_train.get('accum_iters', 1)
         self.setup_optimizers()
         self.setup_schedulers()
 
@@ -93,33 +96,79 @@ class SRModel(BaseModel):
             self.gt = data['gt'].to(self.device)
 
     def optimize_parameters(self, current_iter):
-        self.optimizer_g.zero_grad()
-        self.output = self.net_g(self.lq)
+        """Forward + backward with gradient accumulation.
 
-        l_total = 0
-        loss_dict = OrderedDict()
-        # pixel loss
-        if self.cri_pix:
-            l_pix = self.cri_pix(self.output, self.gt)
-            l_total += l_pix
-            loss_dict['l_pix'] = l_pix
-        # perceptual loss
-        if self.cri_perceptual:
-            l_percep, l_style = self.cri_perceptual(self.output, self.gt)
-            if l_percep is not None:
-                l_total += l_percep
-                loss_dict['l_percep'] = l_percep
-            if l_style is not None:
-                l_total += l_style
-                loss_dict['l_style'] = l_style
+        Accumulates gradients over `accum_iters` consecutive iterations,
+        then calls optimizer.step() once at the end of each window.
 
-        l_total.backward()
-        self.optimizer_g.step()
+        Window position is 1-based so the logic is correct for:
+          - fresh training  (current_iter starts at 1 after increment)
+          - resuming        (any arbitrary checkpoint iter)
+          - accum_iters = 1 (identical to no accumulation)
+
+        Keys are read from opt['datasets']['train']:
+          accum_iters, use_grad_clip, grad_clip_norm
+
+        DDP no_sync() skips cross-GPU all-reduce on non-update steps,
+        saving ~20-30 pct comms overhead on multi-GPU / Slurm setups.
+        """
+        import contextlib
+
+        # 1-based position within the accumulation window
+        window_pos     = ((current_iter - 1) % self.accum_iters) + 1
+        is_first       = (window_pos == 1)
+        is_update_step = (window_pos == self.accum_iters)
+
+        # Zero gradients at the START of each window
+        if is_first:
+            self.optimizer_g.zero_grad()
+
+        # Skip all-reduce on non-update steps (DDP only)
+        if hasattr(self.net_g, 'no_sync') and not is_update_step:
+            sync_ctx = self.net_g.no_sync()
+        else:
+            sync_ctx = contextlib.nullcontext()
+
+        with sync_ctx:
+            self.output = self.net_g(self.lq)
+
+            l_total = 0
+            loss_dict = OrderedDict()
+
+            # pixel loss (L1 / Charbonnier)
+            if self.cri_pix:
+                l_pix = self.cri_pix(self.output, self.gt)
+                l_total += l_pix
+                loss_dict['l_pix'] = l_pix
+
+            # perceptual loss (SRGAN variants)
+            if hasattr(self, 'cri_perceptual') and self.cri_perceptual:
+                l_percep, l_style = self.cri_perceptual(self.output, self.gt)
+                if l_percep is not None:
+                    l_total += l_percep
+                    loss_dict['l_percep'] = l_percep
+                if l_style is not None:
+                    l_total += l_style
+                    loss_dict['l_style'] = l_style
+
+            # Scale loss so accumulated gradient == single large-batch gradient
+            (l_total / self.accum_iters).backward()
+
+        # optimizer.step() fires at the END of each accumulation window
+        if is_update_step:
+            _ds_train = self.opt.get('datasets', {}).get('train', {})
+            if _ds_train.get('use_grad_clip', False):
+                torch.nn.utils.clip_grad_norm_(
+                    self.net_g.parameters(),
+                    _ds_train.get('grad_clip_norm', 1.0)
+                )
+            self.optimizer_g.step()
 
         self.log_dict = self.reduce_loss_dict(loss_dict)
 
-        if self.ema_decay > 0:
+        if self.ema_decay > 0 and is_update_step:
             self.model_ema(decay=self.ema_decay)
+
 
     def test(self):
         if hasattr(self, 'net_g_ema'):

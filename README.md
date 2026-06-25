@@ -1,39 +1,61 @@
-# [CVPR 2025] Progressive Focused Transformer for Single Image Super-Resolution
+# ProMoD: Progressive Mixture-of-Depths for Efficient Single Image Super-Resolution
 
-This repository is an official implementation of the paper "Progressive Focused Transformer for Single Image Super-Resolution", CVPR, 2025.
+**ProMoD** extends [PFT (CVPR 2025)](https://arxiv.org/abs/2503.20337) with **Mixture-of-Depths (MoD)** routing, using PFT's progressive focused attention cascade as a zero-parameter importance signal to dynamically skip computation for less important tokens per layer.
 
-[![arXiv](https://img.shields.io/badge/Arxiv-2503.20337-AD1C18.svg?logo=arXiv)](https://arxiv.org/abs/2503.20337)
-[![Pretrained Models](https://img.shields.io/badge/Pretrained%20Models-AD1C18.svg?logo=Googledrive)](https://drive.google.com/drive/folders/1ChkxVDghFWUtJydJKLp5yssrUfm0VWfg?usp=sharing)
-[![Visual Results](https://img.shields.io/badge/Visual%20Results-AD1C18.svg?logo=Googledrive)](https://drive.google.com/drive/folders/19roY74iFLFuqZ_Uoy0jvNVNpRzBrFlyK?usp=sharing)
+> **Base**: Progressive Focused Transformer (PFT, CVPR 2025) — Wei Long, Xingyu Zhou, Leheng Zhang, Shuhang Gu  
+> **Extension**: ProMoD — adds MoD routing with PFA-based importance accumulation
 
-By [Wei Long](https://scholar.google.com/citations?user=CsVTBJoAAAAJ), [Xingyu Zhou](https://scholar.google.com/citations?user=dgO3CyMAAAAJ), [Leheng Zhang](https://scholar.google.com/citations?user=DH1CJqkAAAAJ), and [Shuhang Gu](https://scholar.google.com/citations?user=-kSTt40AAAAJ).
-
-> **Abstract:** Transformer-based methods have achieved remarkable results in image super-resolution tasks because they can capture non-local dependencies in low-quality input images. However, this feature-intensive modeling approach is computationally expensive because it calculates the similarities between numerous features that are irrelevant to the query features when obtaining attention weights. These unnecessary similarity calculations not only degrade the reconstruction performance but also introduce significant computational overhead. How to accurately identify the features that are important to the current query features and avoid similarity calculations between irrelevant features remains an urgent problem. To address this issue, we propose a novel and effective **P**rogressive **F**ocused **T**ransformer (**PFT**) that links all isolated attention maps in the network through Progressive Focused Attention (PFA) to focus attention on the most important tokens. PFA not only enables the network to capture more critical similar features, but also significantly reduces the computational cost of the overall network by filtering out irrelevant features before calculating similarities. Extensive experiments demonstrate the effectiveness of the proposed method, achieving state-of-the-art performance on various single image super-resolution benchmarks..
-> 
-> <img width="800" src="figures/pft_m.png"> 
-> <br/>
-> <img width="800" src="figures/PFT.png"> 
-
-
+---
 
 ## Contents
-1. [Enviroment](#environment)
-1. [Inference](#inference)
-1. [Training](#training)
-1. [Testing](#testing)
-1. [Results](#results)
-1. [Visual Results](#visual-results)
-1. [Visualization of Attention Distributions](#visualization-of-attention-distributions)
-1. [Acknowledgements](#acknowledgements)
-1. [Citation](#citation)
+1. [Architecture](#architecture)
+2. [Environment](#environment)
+3. [Data Preparation](#data-preparation)
+4. [Training](#training)
+5. [Testing](#testing)
+6. [Gradient Accumulation Patch](#gradient-accumulation-patch)
+7. [LANTA HPC Setup](#lanta-hpc-setup)
+8. [Acknowledgements](#acknowledgements)
+9. [Citation](#citation)
+
+---
+
+## Architecture
+
+ProMoD stacks a capacity schedule on top of PFT's transformer layers. Each layer receives a capacity ratio `r ∈ [0.4, 1.0]`, and only the top-`k = ceil(r × N)` tokens (ranked by the accumulated PFA importance score) participate in attention and FFN. All other tokens skip via residual connection.
+
+```
+PFT layer i:
+  importance[i] = importance[i-1] × decay + attn_score[i]   ← progressive accumulation
+  active_mask   = top_k(importance[i], k=ceil(r×N))
+  x = shortcut + attn(x) × active_mask
+  x = x + ffn(x)  × active_mask
+```
+
+Capacity schedule (default, 24-layer ProMoD-light):
+```
+Layers 0-1  : r = 1.0  (warmup, full compute)
+Layers 2-3  : r = 0.8
+Layers 4-9  : r = 0.6
+Layers 10-15: r = 0.5
+Layers 16-23: r = 0.4
+```
+
+**Key files:**
+- `basicsr/archs/promod_arch.py` — ProMoD architecture
+- `basicsr/archs/pft_arch.py` — original PFT base
+- `scripts/apply_grad_accum_patch.sh` — gradient accumulation patcher
+- `scripts/preprocess_div2k.sh` — DIV2K → LMDB converter
+- `scripts/setup_lanta.sh` — LANTA HPC one-shot setup
+- `scripts/train_promod_light_x2.sh` — LANTA Slurm training job
+
+---
 
 ## Environment
-- Python 3.9
-- PyTorch 2.5.0
 
-### Installation
 ```bash
-git clone https://github.com/LabShuHangGU/PFT-SR.git
+git clone https://github.com/windx987/ProMoD-SR.git
+cd ProMoD-SR
 
 conda create -n PFT python=3.9
 conda activate PFT
@@ -41,122 +63,169 @@ conda activate PFT
 pip install -r requirements.txt
 python setup.py develop
 
-cd ./ops_smm
-./make.sh
+# Build sparse matrix multiplication CUDA kernel (requires nvcc)
+cd ops_smm
+CUDA_HOME=/path/to/cuda python setup.py install
+cd ..
 ```
 
-## Inference
-Using ```inference.py``` for fast inference on single image or multiple images within the same folder.
+---
+
+## Data Preparation
+
+### Training data (DIV2K)
+
+Download [DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) HR and LR bicubic × 2/3/4 into `datasets/DIV2K/`, then convert to LMDB for fast I/O:
+
 ```bash
-# For classical SR
-python inference.py -i inference_image.png -o results/test/ --scale 4 --task classical
-python inference.py -i inference_images/ -o results/test/ --scale 4 --task classical
-
-# For lightweight SR
-python inference.py -i inference_image.png -o results/test/ --scale 4 --task lightweight
-python inference.py -i inference_images/ -o results/test/ --scale 4 --task lightweight
+bash scripts/preprocess_div2k.sh .
 ```
-The PFT SR model processes the image ```inference_image.png``` or images within the ```inference_images/``` directory. The results will be saved in the ```results/inference/``` directory.
 
+This produces:
+```
+datasets/DIV2K/DIV2K_train_HR.lmdb
+datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb
+datasets/DIV2K/DIV2K_train_LR_bicubic_X3.lmdb
+datasets/DIV2K/DIV2K_train_LR_bicubic_X4.lmdb
+```
+
+### Test data
+
+Download [TestDataSR](https://drive.google.com/file/d/1_4Fy9emAcqdiBwVM6FvbJU50LCtaBoMt/view?usp=sharing) (Set5 / Set14 / BSD100 / Urban100 / Manga109) and place in `datasets/TestDataSR/`.
+
+---
 
 ## Training
-### Data Preparation
-- Download the training dataset DF2K ([DIV2K](https://data.vision.ee.ethz.ch/cvl/DIV2K/) + [Flickr2K](https://cv.snu.ac.kr/research/EDSR/Flickr2K.tar)) and put them in the folder `./datasets`.
-- It's recommanded to refer to the data preparation from [BasicSR](https://github.com/XPixelGroup/BasicSR/blob/master/docs/DatasetPreparation.md) for faster data reading speed.
 
-### Training Commands
-- Refer to the training configuration files in `./options/train` folder for detailed settings.
-- PFT (Classical Image Super-Resolution)
+### ProMoD-light (LANTA 4 × A100)
+
 ```bash
-# batch size = 8 (GPUs) × 4 (per GPU)
-# training dataset: DF2K
-
-# ×2 scratch, input size = 64×64, 500k iterations
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --use-env --nproc_per_node=8 --master_port=1145  basicsr/train.py -opt options/train/001_PFT_SRx2_scratch.yml --launcher pytorch
-
-# ×3 finetune, input size = 64×64, 250k iterationsCUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --use-env --nproc_per_node=8 --master_port=1145  basicsr/train.py -opt options/train/002_PFT_SRx3_finetune.yml --launcher pytorch
-
-# ×4 finetune, input size = 64×64, 250k iterations
-CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 python -m torch.distributed.launch --use-env --nproc_per_node=8 --master_port=1145  basicsr/train.py -opt options/train/003_PFT_SRx4_finetune.yml --launcher pytorch
+sbatch scripts/train_promod_light_x2.sh
 ```
 
-- PFT-light (Lightweight Image Super-Resolution)
+Config: `options/train/lanta_201_ProMoD_light_SRx2.yml`  
+— 4 GPUs × batch 8 = effective batch 32, 500 K optimizer steps.
+
+### ProMoD-light (single GPU with gradient accumulation)
+
+Apply the gradient accumulation patch first (see [below](#gradient-accumulation-patch)), then:
+
 ```bash
-# batch size = 4 (GPUs) × 8 (per GPU)
-# training dataset: DIV2K
-
-# ×2 scratch, input size = 64×64, 500k iterations
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --use-env --nproc_per_node=4 --master_port=1145  basicsr/train.py -opt options/train/101_PFT_light_SRx2_scratch.yml --launcher pytorch
-
-# ×3 finetune, input size = 64×64, 250k iterations
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --use-env --nproc_per_node=4 --master_port=1145  basicsr/train.py -opt options/train/102_PFT_light_SRx3_finetune.yml --launcher pytorch
-
-# ×4 finetune, input size = 64×64, 250k iterations
-CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch --use-env --nproc_per_node=4 --master_port=1145  basicsr/train.py -opt options/train/103_PFT_light_SRx4_finetune.yml --launcher pytorch
+python basicsr/train.py \
+    -opt options/train/local_201_ProMoD_light_SRx2_gradaccum_test.yml \
+    --launcher none
 ```
 
+Config: `options/train/local_201_ProMoD_light_SRx2_gradaccum_test.yml`  
+— 1 GPU × batch 2 × `accum_iters=4` = effective batch 8. `total_iter` in YAML is in **optimizer-step units**; the loop runs `total_iter × accum_iters` raw iterations automatically.
+
+### PFT-light baseline (for comparison)
+
+```bash
+# 4 GPUs
+CUDA_VISIBLE_DEVICES=0,1,2,3 python -m torch.distributed.launch \
+    --use-env --nproc_per_node=4 --master_port=1145 \
+    basicsr/train.py -opt options/train/101_PFT_light_SRx2_scratch.yml \
+    --launcher pytorch
+```
+
+---
 
 ## Testing
-### Data Preparation
-- Download the testing data (Set5 + Set14 + BSD100 + Urban100 + Manga109 [[download](https://drive.google.com/file/d/1_4Fy9emAcqdiBwVM6FvbJU50LCtaBoMt/view?usp=sharing)]) and put them in the folder `./datasets`.
 
-### Pretrained Models
-- Download the [pretrained models](https://drive.google.com/drive/folders/1ChkxVDghFWUtJydJKLp5yssrUfm0VWfg?usp=sharing) and put them in the folder `./experiments/pretrained_models`.
-
-### Testing Commands
-- Refer to the testing configuration files in `./options/test` folder for detailed settings.
-- PFT (Classical Image Super-Resolution)
-- **We have now integrated the patchwise_testing strategy into basicsr/models/pft_model.py. This update allows for successful inference on RTX 4090 GPUs without running into memory issues.**
 ```bash
-python basicsr/test.py -opt options/test/001_PFT_SRx2_scratch.yml
-python basicsr/test.py -opt options/test/002_PFT_SRx3_finetune.yml
-python basicsr/test.py -opt options/test/003_PFT_SRx4_finetune.yml
-```
+# ProMoD
+python basicsr/test.py -opt options/test/201_ProMoD_light_SRx2_scratch.yml
 
-- PFT-light (Lightweight Image Super-Resolution)
-```bash
+# PFT-light (baseline)
 python basicsr/test.py -opt options/test/101_PFT_light_SRx2_scratch.yml
-python basicsr/test.py -opt options/test/102_PFT_light_SRx3_finetune.yml
-python basicsr/test.py -opt options/test/103_PFT_light_SRx4_finetune.yml
 ```
 
+Download [pretrained models](https://drive.google.com/drive/folders/1ChkxVDghFWUtJydJKLp5yssrUfm0VWfg?usp=sharing) and put them in `experiments/pretrained_models/`.
 
-## Results
-- Classical Image Super-Resolution
+---
 
-<img width="800" src="figures/classical.png">
+## Gradient Accumulation Patch
 
-- Lightweight Image Super-Resolution
+`scripts/apply_grad_accum_patch.sh` patches three BasicSR files to add gradient accumulation support. It is **idempotent** (safe to re-run), creates a timestamped backup before touching any file, and validates syntax with `ast.parse` before writing.
 
-<img width="800" src="figures/lightweight.png">
+### What gets patched
 
-## Visual Results
+| File | Change |
+|---|---|
+| `basicsr/models/base_model.py` | `self.accum_iters = 1` default + `_should_update()` helper |
+| `basicsr/models/sr_model.py` | New `optimize_parameters` with window logic, DDP `no_sync()`, optional grad clip |
+| `basicsr/train.py` | `total_iter` / `warmup_iter` auto-scaled by `accum_iters`; LR scheduler guarded to update steps only |
 
-<img width="800" src="figures/visual_classical.png">
+### Apply
 
-<img width="800" src="figures/visual_lightweight.png">
-
-## Visualization of Attention Distributions
-<img width="800" src="figures/attention_distributions.png">
-
-1. Uncomment the code at this location to enable attention map saving: https://github.com/LabShuHangGU/PFT-SR/blob/master/basicsr/archs/pft_arch.py#L316-L328
-2. Perform inference on the image you want to visualize to generate and save the attention maps under the ./results/Attention_map directory:
+```bash
+bash scripts/apply_grad_accum_patch.sh .
 ```
-python inference.py -i inference_image.png -o results/test/ --scale 4 --task lightweight
+
+### YAML configuration
+
+Add under `datasets.train` (not under `train:`):
+
+```yaml
+datasets:
+  train:
+    batch_size_per_gpu: 4
+    accum_iters: 8          # effective batch = 4 × 8 × num_gpu
+    use_grad_clip: false    # optional — set true + grad_clip_norm: 1.0 for stability
 ```
-3. Modify the corresponding paths and specify the window location you want to visualize in VisualAttention.py (the window is indexed from left to right, top to bottom, assuming the stride equals the window size).
-4. Run the following command to visualize the attention map:
+
+`total_iter` and `warmup_iter` under `train:` are interpreted as **optimizer steps**, identical to non-accumulation runs. The patch scales them to raw iterations internally, so configs are portable between single-GPU (with accum) and multi-GPU (without accum) runs.
+
+### Undo
+
+```bash
+# Backup path is printed at the end of each run, e.g.:
+cp .grad_accum_backup_YYYYMMDD_HHMMSS/base_model.py  basicsr/models/base_model.py
+cp .grad_accum_backup_YYYYMMDD_HHMMSS/sr_model.py    basicsr/models/sr_model.py
+cp .grad_accum_backup_YYYYMMDD_HHMMSS/train.py       basicsr/train.py
 ```
-python VisualAttention.py
+
+---
+
+## LANTA HPC Setup
+
+LANTA is NSTDA's supercomputer (Slurm, A100 nodes). Full guide: [LANTA.md](../LANTA.md)
+
+### One-shot setup on login node
+
+```bash
+# After rsync-ing the repo and raw_data zips to LANTA:
+bash scripts/setup_lanta.sh
 ```
-It should be noted that PFT employs a shift window operation, resulting in different corresponding positions in the attention maps between odd-numbered and even-numbered layers.
+
+Installs pip deps, runs `setup.py develop`, extracts DIV2K + TestDataSR zips, and verifies all data paths.
+
+### Build CUDA kernel
+
+```bash
+sbatch scripts/build_smm.sh
+```
+
+### Submit training job
+
+```bash
+sbatch scripts/train_promod_light_x2.sh
+```
+
+---
 
 ## Acknowledgements
-This code is built on [BasicSR](https://github.com/XPixelGroup/BasicSR) and [ATD](https://github.com/LabShuHangGU/Adaptive-Token-Dictionary.git).
+
+This code is built on [PFT-SR (CVPR 2025)](https://github.com/LabShuHangGU/PFT-SR), [BasicSR](https://github.com/XPixelGroup/BasicSR), and [ATD](https://github.com/LabShuHangGU/Adaptive-Token-Dictionary.git).
+
+---
 
 ## Citation
 
-```
+If you use ProMoD, please also cite the PFT paper:
+
+```bibtex
 @inproceedings{long2025progressive,
   title={Progressive Focused Transformer for Single Image Super-Resolution},
   author={Long, Wei and Zhou, Xingyu and Zhang, Leheng and Gu, Shuhang},

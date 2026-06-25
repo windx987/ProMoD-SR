@@ -20,6 +20,9 @@ class BaseModel():
         self.is_train = opt['is_train']
         self.schedulers = []
         self.optimizers = []
+        # gradient accumulation: forward passes per optimizer.step()
+        # set by subclass from opt['datasets']['train']['accum_iters']
+        self.accum_iters = 1
 
     def feed_data(self, data):
         pass
@@ -394,3 +397,13 @@ class BaseModel():
                 log_dict[name] = value.mean().item()
 
             return log_dict
+
+    # -- Gradient accumulation helpers ------------------------------------
+    def _should_update(self, current_iter):
+        """True on iterations where optimizer.step() fires."""
+        return (((current_iter - 1) % self.accum_iters) + 1) == self.accum_iters
+
+    def _loss_scale(self):
+        """Divide loss by this before backward() to keep gradient scale."""
+        return 1.0 / self.accum_iters
+

@@ -1,1 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+.eggs/
+dist/
+build/
+*.so
+
+# Datasets and large files
+datasets/
+results/
+tb_logger/
+
+# Training experiments (model weights, states, logs)
+experiments/
+!experiments/pretrained_models/.gitkeep
+
+# LMDB
+*.lmdb/
+
+# Patch backups
+.grad_accum_backup_*/
+
+# Build artifacts
+ops_smm/build/
+ops_smm/smm_cuda.egg-info/
+
+# OS
 .DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+*.swp

@@ -1,9 +1,9 @@
 
 # general settings
-name: 101_PFT_light_SRx2_scratch
+name: 201_ProMoD_light_SRx2_scratch
 model_type: PFTModel
 scale: 2
-num_gpu: 1  # set num_gpu: 0 for cpu mode
+num_gpu: 1
 manual_seed: 0
 
 datasets:
@@ -49,7 +49,7 @@ datasets:
 
 # network structures
 network_g:
-  type: PFT
+  type: ProMoD
   upscale: 2
   in_chans: 3
   img_size: 64
@@ -57,10 +57,10 @@ network_g:
   depths: [2, 4, 6, 6, 6]
   num_heads: 4
   num_topk: [1024, 1024,
-            256, 256, 256, 256,
-            128, 128, 128, 128, 128, 128,
-            64, 64, 64, 64, 64, 64,
-            32, 32, 32, 32, 32, 32]
+             256, 256, 256, 256,
+             128, 128, 128, 128, 128, 128,
+             64, 64, 64, 64, 64, 64,
+             32, 32, 32, 32, 32, 32]
   window_size: 32
   convffn_kernel_size: 7
   img_range: 1.
@@ -68,20 +68,21 @@ network_g:
   upsampler: 'pixelshuffledirect'
   resi_connection: '1conv'
   use_checkpoint: false
+  mod_warmup_layers: 2
 
 # path
 path:
-  pretrain_network_g: ~  # experiments/pretrained_models/101_PFT_light_SRx2_scratch.pth
-  strict_load_g: yes
+  pretrain_network_g: ~
+  strict_load_g: true
   param_key_g: params_ema
 
 # validation settings
 val:
-  save_img: true
-  suffix: ~  # add suffix to saved images, if None, use exp name
+  save_img: false
+  suffix: ~
 
   metrics:
-    psnr: # metric name, can be arbitrary
+    psnr:
       type: calculate_psnr
       crop_border: 2
       test_y_channel: yes

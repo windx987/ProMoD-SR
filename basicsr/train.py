@@ -52,13 +52,17 @@ def create_train_val_dataloader(opt, logger):
                 len(train_set) * dataset_enlarge_ratio / (dataset_opt['batch_size_per_gpu'] * opt['world_size']))
             total_iters = int(opt['train']['total_iter'])
             total_epochs = math.ceil(total_iters / (num_iter_per_epoch))
+            _accum_log = dataset_opt.get('accum_iters', 1)
             logger.info('Training statistics:'
-                        f'\n\tNumber of train images: {len(train_set)}'
-                        f'\n\tDataset enlarge ratio: {dataset_enlarge_ratio}'
-                        f'\n\tBatch size per gpu: {dataset_opt["batch_size_per_gpu"]}'
+                        f'\n\tNumber of train images : {len(train_set)}'
+                        f'\n\tDataset enlarge ratio  : {dataset_enlarge_ratio}'
+                        f'\n\tBatch size per gpu     : {dataset_opt["batch_size_per_gpu"]}'
                         f'\n\tWorld size (gpu number): {opt["world_size"]}'
-                        f'\n\tRequire iter number per epoch: {num_iter_per_epoch}'
-                        f'\n\tTotal epochs: {total_epochs}; iters: {total_iters}.')
+                        f'\n\tIter per epoch         : {num_iter_per_epoch}'
+                        f'\n\tGradient accum iters   : {_accum_log}'
+                        f'\n\tEffective batch size   : {dataset_opt["batch_size_per_gpu"] * _accum_log * opt["world_size"]}'
+                        f'\n\tOptimizer steps (YAML) : {total_iters}'
+                        f'\n\tRaw loop iters         : {total_iters * _accum_log}')
         elif phase.split('_')[0] == 'val':
             val_set = build_dataset(dataset_opt)
             val_loader = build_dataloader(
@@ -158,6 +162,16 @@ def train_pipeline(root_path):
     data_timer, iter_timer = AvgTimer(), AvgTimer()
     start_time = time.time()
 
+    # Scale YAML iter counts (optimizer steps) → raw loop iterations
+    _accum = opt.get('datasets', {}).get('train', {}).get('accum_iters', 1)
+    if _accum > 1:
+        total_iters  *= _accum
+        total_epochs *= _accum
+        msg_logger.max_iters = total_iters  # fix ETA to use raw iter count
+    _warmup_raw = opt['train'].get('warmup_iter', -1)
+    if _warmup_raw > 0 and _accum > 1:
+        _warmup_raw *= _accum
+
     for epoch in range(start_epoch, total_epochs + 1):
         train_sampler.set_epoch(epoch)
         prefetcher.reset()
@@ -169,8 +183,15 @@ def train_pipeline(root_path):
             current_iter += 1
             if current_iter > total_iters:
                 break
-            # update learning rate
-            model.update_learning_rate(current_iter, warmup_iter=opt['train'].get('warmup_iter', -1))
+
+            # 1-based position in the accumulation window
+            _window_pos = ((current_iter - 1) % _accum) + 1
+            is_update_step = (_window_pos == _accum)
+
+            # LR scheduler only advances on actual optimizer.step() iterations
+            if is_update_step:
+                model.update_learning_rate(current_iter, warmup_iter=_warmup_raw)
+
             # training
             model.feed_data(train_data)
             model.optimize_parameters(current_iter)
@@ -179,6 +200,7 @@ def train_pipeline(root_path):
                 # reset start time in msg_logger for more accurate eta_time
                 # not work in resume mode
                 msg_logger.reset_start_time()
+
             # log
             if current_iter % opt['logger']['print_freq'] == 0:
                 log_vars = {'epoch': epoch, 'iter': current_iter}
@@ -186,6 +208,8 @@ def train_pipeline(root_path):
                 log_vars.update({'time': iter_timer.get_avg_time(), 'data_time': data_timer.get_avg_time()})
                 log_vars.update(model.get_current_log())
                 msg_logger(log_vars)
+                if _accum > 1:
+                    logger.info(f'  accum [{_window_pos}/{_accum}]')
 
             # save models and training states
             if current_iter % opt['logger']['save_checkpoint_freq'] == 0:
