@@ -6,7 +6,6 @@ scale: 2
 num_gpu: 2
 manual_seed: 0
 
-# find_unused_parameters needs to be true, otherwise it will affect performance
 find_unused_parameters: true
 
 # dataset and data loader settings
@@ -14,11 +13,10 @@ datasets:
   train:
     name: DIV2K
     type: PairedImageDataset
-    dataroot_gt: datasets/DIV2K/DIV2K_train_HR
-    dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic/X2
-    filename_tmpl: '{}x2'
+    dataroot_gt: /home/glider/datasets/DIV2K/DIV2K_train_HR.lmdb
+    dataroot_lq: /home/glider/datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb
     io_backend:
-      type: disk
+      type: lmdb
 
     gt_size: 128
     use_hflip: true
@@ -26,33 +24,33 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 8
+    batch_size_per_gpu: 32       # 2×A100-40GB: effective batch = 64
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
-    pin_memory: True
-    persistent_workers: True
+    pin_memory: true
+    persistent_workers: true
 
   val_1:
     name: Set5
     type: PairedImageDataset
-    dataroot_gt: datasets/TestDataSR/HR/Set5/x2
-    dataroot_lq: datasets/TestDataSR/LR/LRBI/Set5/x2
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx2
     io_backend:
       type: disk
 
   val_2:
     name: Set14
     type: PairedImageDataset
-    dataroot_gt: datasets/TestDataSR/HR/Set14/x2
-    dataroot_lq: datasets/TestDataSR/LR/LRBI/Set14/x2
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/LRbicx2
     io_backend:
       type: disk
 
   val_3:
     name: BSD100
     type: PairedImageDataset
-    dataroot_gt: datasets/TestDataSR/HR/B100/x2
-    dataroot_lq: datasets/TestDataSR/LR/LRBI/B100/x2
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/LRbicx2
     io_backend:
       type: disk
 
@@ -89,10 +87,14 @@ path:
 train:
   ema_decay: 0.999
   optim_g:
-    type: AdamW
-    lr: !!float 5e-4
-    weight_decay: 0
-    betas: [0.9, 0.99]
+    type: Muon
+    lr: !!float 2e-4
+    momentum: 0.95
+    nesterov: true
+    ns_steps: 5
+    adamw_lr: !!float 2e-4
+    adamw_betas: [0.9, 0.99]
+    adamw_wd: 0.0
 
   scheduler:
     type: MultiStepLR
@@ -110,16 +112,15 @@ train:
 
 # validation settings
 val:
-  val_freq: !!float 1e4
+  val_freq: !!float 5e3
   save_img: false
 
   metrics:
-    psnr: # metric name, can be arbitrary
+    psnr:
       type: calculate_psnr
       crop_border: 2
       test_y_channel: yes
-
-    ssim: # metric name, can be arbitrary
+    ssim:
       type: calculate_ssim
       crop_border: 2
       test_y_channel: yes
@@ -127,7 +128,7 @@ val:
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 1e4
+  save_checkpoint_freq: !!float 5e3
   use_tb_logger: true
   wandb:
     project: ~

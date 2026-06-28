@@ -94,7 +94,7 @@ network_g:
 
 # path — pretrain from x2 scratch
 path:
-  pretrain_network_g: experiments/202_ProMoD_light_SRx2_scratch/models/net_g_latest.pth
+  pretrain_network_g: experiments/201_ProMoD_light_SRx2_scratch/models/net_g_latest.pth
   strict_load_g: false
   resume_state: ~
 
