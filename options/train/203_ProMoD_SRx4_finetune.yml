@@ -13,8 +13,8 @@ datasets:
   train:
     name: DF2K
     type: PairedImageDataset
-    dataroot_gt: /home/glider/datasets/DF2K/DF2K_train_HR.lmdb
-    dataroot_lq: /home/glider/datasets/DF2K/DF2K_train_LR_bicubic_X4.lmdb
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/DF2K_train_HR.lmdb
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/DF2K_train_LR_bicubic_X4.lmdb
     io_backend:
       type: lmdb
 

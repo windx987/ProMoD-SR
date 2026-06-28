@@ -10,12 +10,12 @@
 #   Flickr2K.tar : ~/rawdata/Flickr2K.tar  (only needed if DF2K HR < 3450 imgs)
 #
 # Output (written to home Lustre — 280 TB free):
-#   ~/datasets/DIV2K/DIV2K_train_HR.lmdb             (~1.5 GB)  ← light model
-#   ~/datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb  (~400 MB)  ← light model
-#   ~/datasets/DF2K/DF2K_train_HR.lmdb               (~10 GB)   ← normal model
-#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X2.lmdb    (~2.5 GB)  ← normal model
-#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X3.lmdb    (~1.2 GB)
-#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X4.lmdb    (~0.7 GB)
+#   ~/datasets/DIV2K/DIV2K_train_HR.lmdb                                (~1.5 GB)  ← light model
+#   ~/datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb                     (~400 MB)  ← light model
+#   /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/DF2K_train_HR.lmdb       (~10 GB)   ← normal model
+#   /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/DF2K_train_LR_bicubic_X2.lmdb (~2.5 GB)
+#   /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/DF2K_train_LR_bicubic_X3.lmdb (~1.2 GB)
+#   /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/DF2K_train_LR_bicubic_X4.lmdb (~0.7 GB)
 #
 # Key design:
 #   LR images named 0001x2.png → LMDB key '0001' (strip xN suffix).
@@ -48,8 +48,8 @@ DIV2K_HR_SRC="$PVC_DATA/DIV2K/DIV2K_train_HR"
 DIV2K_LR_SRC="$PVC_DATA/DIV2K/DIV2K_train_LR_bicubic"
 FLICKR2K_TAR="${FLICKR2K_TAR:-$HOME/rawdata/Flickr2K.tar}"
 
-# Output: home Lustre (280 TB free)
-OUT="$HOME/datasets/DF2K"
+# Output: datasets PVC (~59 GB free)
+OUT="/mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K"
 WORK="$HOME/datasets/DF2K_assembled"   # staging area when assembling from parts
 
 # Auto-detect python
