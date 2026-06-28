@@ -119,6 +119,9 @@ class BaseModel():
             optimizer = torch.optim.RMSprop(params, lr, **kwargs)
         elif optim_type == 'Rprop':
             optimizer = torch.optim.Rprop(params, lr, **kwargs)
+        elif optim_type == 'Muon':
+            from basicsr.utils.muon import Muon
+            optimizer = Muon(params, lr=lr, **kwargs)
         else:
             raise NotImplementedError(f'optimizer {optim_type} is not supported yet.')
         return optimizer
