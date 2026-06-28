@@ -1,6 +1,6 @@
 
 # general settings
-name: 207_ProMoD_SRx4_finetune_DF2K
+name: 205_ProMoD_light_SRx4_finetune
 model_type: PFTModel
 scale: 4
 num_gpu: 2
@@ -11,10 +11,10 @@ find_unused_parameters: true
 # dataset and data loader settings
 datasets:
   train:
-    name: DF2K
+    name: DIV2K
     type: PairedImageDataset
-    dataroot_gt: /home/glider/datasets/DF2K/DF2K_train_HR.lmdb
-    dataroot_lq: /home/glider/datasets/DF2K/DF2K_train_LR_bicubic_X4.lmdb
+    dataroot_gt: /home/glider/datasets/DIV2K/DIV2K_train_HR.lmdb
+    dataroot_lq: /home/glider/datasets/DIV2K/DIV2K_train_LR_bicubic_X4.lmdb
     io_backend:
       type: lmdb
 
@@ -23,15 +23,11 @@ datasets:
     use_rot: true
 
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 8        # accum_iters=2 → effective batch = 32
+    batch_size_per_gpu: 32
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true
     persistent_workers: true
-
-    accum_iters: 2
-    use_grad_clip: true
-    grad_clip_norm: 1.0
 
   val_1:
     name: Set5
@@ -79,27 +75,26 @@ network_g:
   upscale: 4
   in_chans: 3
   img_size: 64
-  embed_dim: 240
-  depths: [4, 4, 4, 6, 6, 6]
-  num_heads: 6
-  num_topk: [1024, 1024, 1024, 1024,
+  embed_dim: 52
+  depths: [2, 4, 6, 6, 6]
+  num_heads: 4
+  num_topk: [1024, 1024,
               256, 256, 256, 256,
-              128, 128, 128, 128,
+              128, 128, 128, 128, 128, 128,
               64, 64, 64, 64, 64, 64,
-              32, 32, 32, 32, 32, 32,
-              16, 16, 16, 16, 16, 16]
+              32, 32, 32, 32, 32, 32]
   window_size: 32
   convffn_kernel_size: 7
   img_range: 1.
-  mlp_ratio: 2.
-  upsampler: 'pixelshuffle'
+  mlp_ratio: 1
+  upsampler: 'pixelshuffledirect'
   resi_connection: '1conv'
-  use_checkpoint: true
+  use_checkpoint: false
   mod_warmup_layers: 2
 
 # path — pretrain from x3 finetune
 path:
-  pretrain_network_g: experiments/206_ProMoD_SRx3_finetune_DF2K/models/net_g_latest.pth
+  pretrain_network_g: experiments/204_ProMoD_light_SRx3_finetune/models/net_g_latest.pth
   strict_load_g: false
   resume_state: ~
 

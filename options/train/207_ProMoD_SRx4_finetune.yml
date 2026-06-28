@@ -1,8 +1,8 @@
 
 # general settings
-name: 202_ProMoD_light_SRx2_DIV2K
+name: 207_ProMoD_SRx4_finetune
 model_type: PFTModel
-scale: 2
+scale: 4
 num_gpu: 2
 manual_seed: 0
 
@@ -11,30 +11,33 @@ find_unused_parameters: true
 # dataset and data loader settings
 datasets:
   train:
-    name: DIV2K
+    name: DF2K
     type: PairedImageDataset
-    dataroot_gt: /home/glider/datasets/DIV2K/DIV2K_train_HR.lmdb
-    dataroot_lq: /home/glider/datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb
+    dataroot_gt: /home/glider/datasets/DF2K/DF2K_train_HR.lmdb
+    dataroot_lq: /home/glider/datasets/DF2K/DF2K_train_LR_bicubic_X4.lmdb
     io_backend:
       type: lmdb
 
-    gt_size: 128
+    gt_size: 256
     use_hflip: true
     use_rot: true
 
-    # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 32       # 2×A100-40GB: effective batch = 64
+    batch_size_per_gpu: 8        # accum_iters=2 → effective batch = 32
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true
     persistent_workers: true
 
+    accum_iters: 2
+    use_grad_clip: true
+    grad_clip_norm: 1.0
+
   val_1:
     name: Set5
     type: PairedImageDataset
     dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx2
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx4
     io_backend:
       type: disk
 
@@ -42,7 +45,7 @@ datasets:
     name: Set14
     type: PairedImageDataset
     dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/LRbicx2
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/LRbicx4
     io_backend:
       type: disk
 
@@ -50,37 +53,54 @@ datasets:
     name: BSD100
     type: PairedImageDataset
     dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/LRbicx2
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/LRbicx4
+    io_backend:
+      type: disk
+
+  val_4:
+    name: Urban100
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/U100/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/U100/LRbicx4
+    io_backend:
+      type: disk
+
+  val_5:
+    name: Manga109
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/M109/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/M109/LRbicx4
     io_backend:
       type: disk
 
 # network structures
 network_g:
   type: ProMoD
-  upscale: 2
+  upscale: 4
   in_chans: 3
   img_size: 64
-  embed_dim: 52
-  depths: [2, 4, 6, 6, 6]
-  num_heads: 4
-  num_topk: [1024, 1024,
+  embed_dim: 240
+  depths: [4, 4, 4, 6, 6, 6]
+  num_heads: 6
+  num_topk: [1024, 1024, 1024, 1024,
               256, 256, 256, 256,
-              128, 128, 128, 128, 128, 128,
+              128, 128, 128, 128,
               64, 64, 64, 64, 64, 64,
-              32, 32, 32, 32, 32, 32]
+              32, 32, 32, 32, 32, 32,
+              16, 16, 16, 16, 16, 16]
   window_size: 32
   convffn_kernel_size: 7
   img_range: 1.
-  mlp_ratio: 1
-  upsampler: 'pixelshuffledirect'
+  mlp_ratio: 2.
+  upsampler: 'pixelshuffle'
   resi_connection: '1conv'
-  use_checkpoint: false
+  use_checkpoint: true
   mod_warmup_layers: 2
 
-# path
+# path — pretrain from x3 finetune
 path:
-  pretrain_network_g: ~
-  strict_load_g: true
+  pretrain_network_g: experiments/206_ProMoD_SRx3_finetune/models/net_g_latest.pth
+  strict_load_g: false
   resume_state: ~
 
 # training settings
@@ -88,23 +108,22 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Muon
-    lr: !!float 2e-4          # Muon lr for weight matrices (2D+)
+    lr: !!float 2e-4
     momentum: 0.95
     nesterov: true
     ns_steps: 5
-    adamw_lr: !!float 2e-4    # AdamW lr for biases and LayerNorm params (1D)
+    adamw_lr: !!float 2e-4
     adamw_betas: [0.9, 0.99]
     adamw_wd: 0.0
 
   scheduler:
     type: MultiStepLR
-    milestones: [250000, 400000, 450000, 475000, 490000]
+    milestones: [150000, 200000, 225000, 240000]
     gamma: 0.5
 
-  total_iter: 500000
-  warmup_iter: 20000
+  total_iter: 250000
+  warmup_iter: 10000
 
-  # losses
   pixel_opt:
     type: L1Loss
     loss_weight: 1.0
@@ -118,11 +137,11 @@ val:
   metrics:
     psnr:
       type: calculate_psnr
-      crop_border: 2
+      crop_border: 4
       test_y_channel: yes
     ssim:
       type: calculate_ssim
-      crop_border: 2
+      crop_border: 4
       test_y_channel: yes
 
 # logging settings
@@ -134,7 +153,6 @@ logger:
     project: ~
     resume_id: ~
 
-# dist training settings
 dist_params:
   backend: nccl
   port: 29500

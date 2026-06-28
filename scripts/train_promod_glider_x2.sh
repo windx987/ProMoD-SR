@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/train_promod_glider_x2.sh [OPT_FILE]
 #
-# Default config: options/train/202_ProMoD_light_SRx2_DF2K.yml
+# Default config: options/train/202_ProMoD_light_SRx2_scratch.yml
 # Override:       bash scripts/train_promod_glider_x2.sh options/train/other.yml
 # =============================================================================
 set -euo pipefail
@@ -15,7 +15,7 @@ set -euo pipefail
 CONDA=/mnt/pvc-shared-pvc-environment-ff3ed7c7/miniconda3
 PYTHON=$CONDA/envs/SISR/bin/python
 PROJ=$HOME/research-sisr/ProMoD-SR
-OPT="${1:-options/train/202_ProMoD_light_SRx2_DIV2K.yml}"
+OPT="${1:-options/train/202_ProMoD_light_SRx2_scratch.yml}"
 
 [ -f "$PYTHON" ] || { echo "ERROR: SISR python not found at $PYTHON"; exit 1; }
 [ -d "$PROJ" ]   || { echo "ERROR: $PROJ not found — run setup_glider.sh first"; exit 1; }
