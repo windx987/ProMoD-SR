@@ -24,7 +24,7 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 32       # 2×A100-40GB: effective batch = 64
+    batch_size_per_gpu: 8        # 2 GPU × batch 8 = effective 16 (matches PFT-light: 2-GPU × batch 8)
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true

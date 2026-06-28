@@ -24,15 +24,13 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 8        # 2×A100-40GB; accum_iters=2 → effective batch = 32
+    batch_size_per_gpu: 4        # 2 GPU × batch 4 × accum 4 = effective 32 (matches 8-GPU × batch 4)
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true
     persistent_workers: true
 
-    # gradient accumulation: 2 GPU × batch 8 × accum 2 = effective 32
-    # (matches original 8-GPU × batch 4 = 32)
-    accum_iters: 2
+    accum_iters: 4
     use_grad_clip: true
     grad_clip_norm: 1.0
 
