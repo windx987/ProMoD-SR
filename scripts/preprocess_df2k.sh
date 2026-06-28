@@ -207,22 +207,30 @@ build() {
 OUT_DIV2K="$HOME/datasets/DIV2K"
 mkdir -p "$OUT_DIV2K"
 
-section "3/7  DIV2K HR LMDB  (light model)"
+section "3/9  DIV2K HR LMDB  (light model)"
 build "$PVC_DATA/DIV2K/DIV2K_train_HR" \
       "$OUT_DIV2K/DIV2K_train_HR.lmdb"
 
-section "4/7  DIV2K LR x2 LMDB  (light model)"
+section "4/9  DIV2K LR x2 LMDB  (light x2)"
 build "$PVC_DATA/DIV2K/DIV2K_train_LR_bicubic/X2" \
       "$OUT_DIV2K/DIV2K_train_LR_bicubic_X2.lmdb" "x2"
 
+section "5/9  DIV2K LR x3 LMDB  (light x3 finetune)"
+build "$PVC_DATA/DIV2K/DIV2K_train_LR_bicubic/X3" \
+      "$OUT_DIV2K/DIV2K_train_LR_bicubic_X3.lmdb" "x3"
+
+section "6/9  DIV2K LR x4 LMDB  (light x4 finetune)"
+build "$PVC_DATA/DIV2K/DIV2K_train_LR_bicubic/X4" \
+      "$OUT_DIV2K/DIV2K_train_LR_bicubic_X4.lmdb" "x4"
+
 # ── 5-7. DF2K LMDBs (for ProMoD normal) ──────────────────────────────────
-section "5/7  DF2K HR LMDB  (normal model)"
+section "7/9  DF2K HR LMDB  (normal model)"
 build "$DF2K_HR_FINAL" "$OUT/DF2K_train_HR.lmdb"
 
-section "6/7  DF2K LR x2 LMDB  (normal model)"
+section "8/9  DF2K LR x2 LMDB  (normal x2)"
 build "$DF2K_LR_FINAL/X2" "$OUT/DF2K_train_LR_bicubic_X2.lmdb" "x2"
 
-section "7/7  DF2K LR x3 and x4 LMDB"
+section "9/9  DF2K LR x3 and x4 LMDB  (normal x3/x4 finetune)"
 build "$DF2K_LR_FINAL/X3" "$OUT/DF2K_train_LR_bicubic_X3.lmdb" "x3"
 build "$DF2K_LR_FINAL/X4" "$OUT/DF2K_train_LR_bicubic_X4.lmdb" "x4"
 
@@ -231,7 +239,10 @@ echo ""
 echo -e "${BLUE}═══════════ Verification ═══════════${NC}"
 
 echo "  DIV2K (light model):"
-for lmdb in "$OUT_DIV2K/DIV2K_train_HR.lmdb" "$OUT_DIV2K/DIV2K_train_LR_bicubic_X2.lmdb"; do
+for lmdb in "$OUT_DIV2K/DIV2K_train_HR.lmdb" \
+            "$OUT_DIV2K/DIV2K_train_LR_bicubic_X2.lmdb" \
+            "$OUT_DIV2K/DIV2K_train_LR_bicubic_X3.lmdb" \
+            "$OUT_DIV2K/DIV2K_train_LR_bicubic_X4.lmdb"; do
     if [ -f "$lmdb/meta_info.txt" ]; then
         n=$(wc -l < "$lmdb/meta_info.txt")
         [ "$n" -ge 800 ] \

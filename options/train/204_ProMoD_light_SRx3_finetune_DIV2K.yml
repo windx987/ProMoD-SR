@@ -1,0 +1,149 @@
+
+# general settings
+name: 204_ProMoD_light_SRx3_finetune_DIV2K
+model_type: PFTModel
+scale: 3
+num_gpu: 2
+manual_seed: 0
+
+find_unused_parameters: true
+
+# dataset and data loader settings
+datasets:
+  train:
+    name: DIV2K
+    type: PairedImageDataset
+    dataroot_gt: /home/glider/datasets/DIV2K/DIV2K_train_HR.lmdb
+    dataroot_lq: /home/glider/datasets/DIV2K/DIV2K_train_LR_bicubic_X3.lmdb
+    io_backend:
+      type: lmdb
+
+    gt_size: 192
+    use_hflip: true
+    use_rot: true
+
+    num_worker_per_gpu: 8
+    batch_size_per_gpu: 32
+    dataset_enlarge_ratio: 1
+    prefetch_mode: cuda
+    pin_memory: true
+    persistent_workers: true
+
+  val_1:
+    name: Set5
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx3
+    io_backend:
+      type: disk
+
+  val_2:
+    name: Set14
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/LRbicx3
+    io_backend:
+      type: disk
+
+  val_3:
+    name: BSD100
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/LRbicx3
+    io_backend:
+      type: disk
+
+  val_4:
+    name: Urban100
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/U100/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/U100/LRbicx3
+    io_backend:
+      type: disk
+
+  val_5:
+    name: Manga109
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/M109/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/M109/LRbicx3
+    io_backend:
+      type: disk
+
+# network structures
+network_g:
+  type: ProMoD
+  upscale: 3
+  in_chans: 3
+  img_size: 64
+  embed_dim: 52
+  depths: [2, 4, 6, 6, 6]
+  num_heads: 4
+  num_topk: [1024, 1024,
+              256, 256, 256, 256,
+              128, 128, 128, 128, 128, 128,
+              64, 64, 64, 64, 64, 64,
+              32, 32, 32, 32, 32, 32]
+  window_size: 32
+  convffn_kernel_size: 7
+  img_range: 1.
+  mlp_ratio: 1
+  upsampler: 'pixelshuffledirect'
+  resi_connection: '1conv'
+  use_checkpoint: false
+  mod_warmup_layers: 2
+
+# path — pretrain from x2 scratch
+path:
+  pretrain_network_g: experiments/202_ProMoD_light_SRx2_DIV2K/models/net_g_latest.pth
+  strict_load_g: false
+  resume_state: ~
+
+# training settings
+train:
+  ema_decay: 0.999
+  optim_g:
+    type: AdamW
+    lr: !!float 2e-4
+    weight_decay: 0
+    betas: [0.9, 0.99]
+
+  scheduler:
+    type: MultiStepLR
+    milestones: [150000, 200000, 225000, 240000]
+    gamma: 0.5
+
+  total_iter: 250000
+  warmup_iter: 10000
+
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+
+# validation settings
+val:
+  val_freq: !!float 5e3
+  save_img: false
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 3
+      test_y_channel: yes
+    ssim:
+      type: calculate_ssim
+      crop_border: 3
+      test_y_channel: yes
+
+# logging settings
+logger:
+  print_freq: 100
+  save_checkpoint_freq: !!float 5e3
+  use_tb_logger: true
+  wandb:
+    project: ~
+    resume_id: ~
+
+dist_params:
+  backend: nccl
+  port: 29500
