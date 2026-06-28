@@ -15,7 +15,7 @@ set -euo pipefail
 CONDA=/mnt/pvc-shared-pvc-environment-ff3ed7c7/miniconda3
 PYTHON=$CONDA/envs/SISR/bin/python
 PROJ=$HOME/research-sisr/ProMoD-SR
-OPT="${1:-options/train/202_ProMoD_light_SRx2_DF2K.yml}"
+OPT="${1:-options/train/202_ProMoD_light_SRx2_DIV2K.yml}"
 
 [ -f "$PYTHON" ] || { echo "ERROR: SISR python not found at $PYTHON"; exit 1; }
 [ -d "$PROJ" ]   || { echo "ERROR: $PROJ not found — run setup_glider.sh first"; exit 1; }

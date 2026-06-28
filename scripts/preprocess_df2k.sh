@@ -2,18 +2,20 @@
 # =============================================================================
 # preprocess_df2k.sh
 #
-# Builds LMDB datasets for DF2K training (DIV2K + Flickr2K).
+# Builds LMDB datasets for both DIV2K (light model) and DF2K (normal model).
 #
 # Input sources (read-only):
-#   DF2K folder  : /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/
 #   DIV2K folder : /mnt/pvc-shared-pvc-datasets-04a32ccd/DIV2K/
+#   DF2K folder  : /mnt/pvc-shared-pvc-datasets-04a32ccd/DF2K/
 #   Flickr2K.tar : ~/rawdata/Flickr2K.tar  (only needed if DF2K HR < 3450 imgs)
 #
 # Output (written to home Lustre — 280 TB free):
-#   ~/datasets/DF2K/DF2K_train_HR.lmdb           (~10 GB)
-#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X2.lmdb (~2.5 GB)
-#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X3.lmdb (~1.2 GB)
-#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X4.lmdb (~0.7 GB)
+#   ~/datasets/DIV2K/DIV2K_train_HR.lmdb             (~1.5 GB)  ← light model
+#   ~/datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb  (~400 MB)  ← light model
+#   ~/datasets/DF2K/DF2K_train_HR.lmdb               (~10 GB)   ← normal model
+#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X2.lmdb    (~2.5 GB)  ← normal model
+#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X3.lmdb    (~1.2 GB)
+#   ~/datasets/DF2K/DF2K_train_LR_bicubic_X4.lmdb    (~0.7 GB)
 #
 # Key design:
 #   LR images named 0001x2.png → LMDB key '0001' (strip xN suffix).
@@ -201,38 +203,61 @@ build() {
     $PYTHON "$TMPDIR_PY/build_lmdb.py" "$src" "$dst" "$strip"
 }
 
-# ── 3-5. Build LMDBs ──────────────────────────────────────────────────────
-section "3/5  HR LMDB"
+# ── 3-4. DIV2K LMDBs (for ProMoD-light) ──────────────────────────────────
+OUT_DIV2K="$HOME/datasets/DIV2K"
+mkdir -p "$OUT_DIV2K"
+
+section "3/7  DIV2K HR LMDB  (light model)"
+build "$PVC_DATA/DIV2K/DIV2K_train_HR" \
+      "$OUT_DIV2K/DIV2K_train_HR.lmdb"
+
+section "4/7  DIV2K LR x2 LMDB  (light model)"
+build "$PVC_DATA/DIV2K/DIV2K_train_LR_bicubic/X2" \
+      "$OUT_DIV2K/DIV2K_train_LR_bicubic_X2.lmdb" "x2"
+
+# ── 5-7. DF2K LMDBs (for ProMoD normal) ──────────────────────────────────
+section "5/7  DF2K HR LMDB  (normal model)"
 build "$DF2K_HR_FINAL" "$OUT/DF2K_train_HR.lmdb"
 
-section "4/5  LR x2 LMDB"
+section "6/7  DF2K LR x2 LMDB  (normal model)"
 build "$DF2K_LR_FINAL/X2" "$OUT/DF2K_train_LR_bicubic_X2.lmdb" "x2"
 
-section "5/5  LR x3 and x4 LMDB"
+section "7/7  DF2K LR x3 and x4 LMDB"
 build "$DF2K_LR_FINAL/X3" "$OUT/DF2K_train_LR_bicubic_X3.lmdb" "x3"
 build "$DF2K_LR_FINAL/X4" "$OUT/DF2K_train_LR_bicubic_X4.lmdb" "x4"
 
 # ── Verify ────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${BLUE}═══════════ Verification ═══════════${NC}"
-HR_COUNT=$(ls "$DF2K_HR_FINAL" | wc -l)
+
+echo "  DIV2K (light model):"
+for lmdb in "$OUT_DIV2K/DIV2K_train_HR.lmdb" "$OUT_DIV2K/DIV2K_train_LR_bicubic_X2.lmdb"; do
+    if [ -f "$lmdb/meta_info.txt" ]; then
+        n=$(wc -l < "$lmdb/meta_info.txt")
+        [ "$n" -ge 800 ] \
+            && echo -e "    ${GREEN}✓${NC} $(basename $lmdb)  ($n entries)" \
+            || echo -e "    ${RED}✗${NC} $(basename $lmdb)  ($n entries — expected 800)"
+    else
+        echo -e "    ${RED}✗${NC} $(basename $lmdb)  (missing)"
+    fi
+done
+
+echo "  DF2K (normal model):"
+DF2K_HR_COUNT=$(ls "$DF2K_HR_FINAL" | wc -l)
 for lmdb in "$OUT/DF2K_train_HR.lmdb" "$OUT/DF2K_train_LR_bicubic_X2.lmdb"; do
     if [ -f "$lmdb/meta_info.txt" ]; then
         n=$(wc -l < "$lmdb/meta_info.txt")
-        if [ "$n" -ge "$HR_COUNT" ]; then
-            echo -e "  ${GREEN}✓${NC} $(basename $lmdb)  ($n entries)"
-        else
-            echo -e "  ${RED}✗${NC} $(basename $lmdb)  ($n entries — expected $HR_COUNT)"
-        fi
+        [ "$n" -ge "$DF2K_HR_COUNT" ] \
+            && echo -e "    ${GREEN}✓${NC} $(basename $lmdb)  ($n entries)" \
+            || echo -e "    ${RED}✗${NC} $(basename $lmdb)  ($n entries — expected $DF2K_HR_COUNT)"
     else
-        echo -e "  ${RED}✗${NC} $(basename $lmdb)  (missing)"
+        echo -e "    ${RED}✗${NC} $(basename $lmdb)  (missing)"
     fi
 done
 
 echo ""
-info "LMDB ready at: $OUT"
-echo ""
-echo "  dataroot_gt: $OUT/DF2K_train_HR.lmdb"
-echo "  dataroot_lq: $OUT/DF2K_train_LR_bicubic_X2.lmdb"
-echo "  io_backend:"
-echo "    type: lmdb"
+info "Done. YAML paths:"
+echo "  Light (DIV2K):  dataroot_gt: $OUT_DIV2K/DIV2K_train_HR.lmdb"
+echo "                  dataroot_lq: $OUT_DIV2K/DIV2K_train_LR_bicubic_X2.lmdb"
+echo "  Normal (DF2K):  dataroot_gt: $OUT/DF2K_train_HR.lmdb"
+echo "                  dataroot_lq: $OUT/DF2K_train_LR_bicubic_X2.lmdb"
