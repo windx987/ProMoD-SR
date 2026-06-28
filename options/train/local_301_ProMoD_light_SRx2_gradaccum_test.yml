@@ -4,7 +4,7 @@
 # Runs 100 iters (~2 min) — just enough to verify loss descends
 # and LR scheduler steps fire every accum_iters iterations.
 
-name: local_201_ProMoD_gradaccum_test
+name: local_301_ProMoD_light_gradaccum_test
 model_type: PFTModel
 scale: 2
 num_gpu: 1

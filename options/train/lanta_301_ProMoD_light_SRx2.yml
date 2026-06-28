@@ -1,6 +1,6 @@
 
 # general settings
-name: 201_ProMoD_light_SRx2_scratch
+name: 301_ProMoD_light_SRx2_scratch
 model_type: PFTModel
 scale: 2
 num_gpu: 4

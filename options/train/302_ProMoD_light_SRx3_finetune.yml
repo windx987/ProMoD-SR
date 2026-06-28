@@ -1,6 +1,6 @@
 
 # general settings
-name: 204_ProMoD_light_SRx3_finetune
+name: 302_ProMoD_light_SRx3_finetune
 model_type: PFTModel
 scale: 3
 num_gpu: 2
@@ -94,7 +94,7 @@ network_g:
 
 # path — pretrain from x2 scratch
 path:
-  pretrain_network_g: experiments/201_ProMoD_light_SRx2_scratch/models/net_g_latest.pth
+  pretrain_network_g: experiments/301_ProMoD_light_SRx2_scratch/models/net_g_latest.pth
   strict_load_g: false
   resume_state: ~
 

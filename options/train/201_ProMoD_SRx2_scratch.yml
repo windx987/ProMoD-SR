@@ -1,6 +1,6 @@
 
 # general settings
-name: 201_ProMoD_light_SRx2_scratch
+name: 201_ProMoD_SRx2_scratch
 model_type: PFTModel
 scale: 2
 num_gpu: 2
@@ -11,10 +11,10 @@ find_unused_parameters: true
 # dataset and data loader settings
 datasets:
   train:
-    name: DIV2K
+    name: DF2K
     type: PairedImageDataset
-    dataroot_gt: /home/glider/datasets/DIV2K/DIV2K_train_HR.lmdb
-    dataroot_lq: /home/glider/datasets/DIV2K/DIV2K_train_LR_bicubic_X2.lmdb
+    dataroot_gt: /home/glider/datasets/DF2K/DF2K_train_HR.lmdb
+    dataroot_lq: /home/glider/datasets/DF2K/DF2K_train_LR_bicubic_X2.lmdb
     io_backend:
       type: lmdb
 
@@ -24,11 +24,17 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 32       # 2×A100-40GB: effective batch = 64
+    batch_size_per_gpu: 8        # 2×A100-40GB; accum_iters=2 → effective batch = 32
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true
     persistent_workers: true
+
+    # gradient accumulation: 2 GPU × batch 8 × accum 2 = effective 32
+    # (matches original 8-GPU × batch 4 = 32)
+    accum_iters: 2
+    use_grad_clip: true
+    grad_clip_norm: 1.0
 
   val_1:
     name: Set5
@@ -60,21 +66,22 @@ network_g:
   upscale: 2
   in_chans: 3
   img_size: 64
-  embed_dim: 52
-  depths: [2, 4, 6, 6, 6]
-  num_heads: 4
-  num_topk: [1024, 1024,
+  embed_dim: 240
+  depths: [4, 4, 4, 6, 6, 6]
+  num_heads: 6
+  num_topk: [1024, 1024, 1024, 1024,
               256, 256, 256, 256,
-              128, 128, 128, 128, 128, 128,
+              128, 128, 128, 128,
               64, 64, 64, 64, 64, 64,
-              32, 32, 32, 32, 32, 32]
+              32, 32, 32, 32, 32, 32,
+              16, 16, 16, 16, 16, 16]
   window_size: 32
   convffn_kernel_size: 7
   img_range: 1.
-  mlp_ratio: 1
-  upsampler: 'pixelshuffledirect'
+  mlp_ratio: 2.
+  upsampler: 'pixelshuffle'
   resi_connection: '1conv'
-  use_checkpoint: false
+  use_checkpoint: true           # saves memory on large model
   mod_warmup_layers: 2
 
 # path
@@ -88,11 +95,11 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Muon
-    lr: !!float 2e-4
+    lr: !!float 2e-4          # Muon lr for weight matrices (2D+)
     momentum: 0.95
     nesterov: true
     ns_steps: 5
-    adamw_lr: !!float 2e-4
+    adamw_lr: !!float 2e-4    # AdamW lr for biases and LayerNorm params (1D)
     adamw_betas: [0.9, 0.99]
     adamw_wd: 0.0
 
@@ -101,7 +108,7 @@ train:
     milestones: [250000, 400000, 450000, 475000, 490000]
     gamma: 0.5
 
-  total_iter: 500000
+  total_iter: 500000             # optimizer steps (patch auto-scales to raw iters × accum_iters)
   warmup_iter: 20000
 
   # losses
