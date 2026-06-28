@@ -24,11 +24,15 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 8        # 2 GPU × batch 8 = effective 16 (matches PFT-light: 2-GPU × batch 8)
+    batch_size_per_gpu: 8        # 2 GPU × batch 8 × accum 4 = effective 64
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true
     persistent_workers: true
+
+    accum_iters: 4
+    use_grad_clip: true
+    grad_clip_norm: 1.0
 
   val_1:
     name: Set5
