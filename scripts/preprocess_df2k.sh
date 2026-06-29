@@ -178,9 +178,14 @@ print(f"  Dest   : {lmdb_path}")
 env = lmdb.open(lmdb_path, map_size=map_size)
 txn = env.begin(write=True)
 meta = []
+skipped = []
 
 for i, (img_file, key) in enumerate(zip(img_paths, keys)):
     img = cv2.imread(os.path.join(folder, img_file))
+    if img is None:
+        print(f"  [WARN] Skipping corrupt image: {img_file}", flush=True)
+        skipped.append(img_file)
+        continue
     h, w, c = img.shape
     _, buf = cv2.imencode('.png', img, [cv2.IMWRITE_PNG_COMPRESSION, 1])
     txn.put(key.encode(), buf.tobytes())
@@ -189,6 +194,9 @@ for i, (img_file, key) in enumerate(zip(img_paths, keys)):
         txn.commit()
         txn = env.begin(write=True)
         print(f"  Committed {i+1}/{len(img_paths)}", flush=True)
+
+if skipped:
+    print(f"  [WARN] Skipped {len(skipped)} corrupt files: {skipped}")
 
 txn.commit()
 env.close()
