@@ -70,7 +70,14 @@ mkdir -p "$OUT"
 DF2K_HR_FINAL="$DF2K_HR_SRC"
 DF2K_LR_FINAL="$DF2K_LR_SRC"
 
-if [ -d "$DF2K_HR_SRC" ]; then
+# Check assembled staging area first (avoids re-extracting Flickr2K.tar)
+if [ -d "$WORK/HR" ] && [ "$(ls "$WORK/HR" | wc -l)" -ge 3000 ]; then
+    ASSEMBLED_COUNT=$(ls "$WORK/HR" | wc -l)
+    info "Assembled folder already has $ASSEMBLED_COUNT images — skipping extraction"
+    _need_assemble=0
+    DF2K_HR_FINAL="$WORK/HR"
+    DF2K_LR_FINAL="$WORK/LR_bicubic"
+elif [ -d "$DF2K_HR_SRC" ]; then
     HR_COUNT=$(ls "$DF2K_HR_SRC" | wc -l)
     info "DF2K HR found: $HR_COUNT images at $DF2K_HR_SRC"
 
