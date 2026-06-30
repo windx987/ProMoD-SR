@@ -156,6 +156,7 @@ import sys
 import os
 import cv2
 import lmdb
+import numpy as np
 from pathlib import Path
 
 folder    = sys.argv[1]
@@ -166,12 +167,11 @@ img_paths = sorted(p for p in os.listdir(folder)
                    if p.lower().endswith('.png'))
 keys = [Path(p).stem.removesuffix(strip_suf) for p in img_paths]
 
-sample = cv2.imread(os.path.join(folder, img_paths[0]))
-est_bytes = int(sample.nbytes * len(img_paths) * 1.5)
-map_size  = max(est_bytes, 10 * 1024**3)   # at least 10 GB
+# Estimate map size from first file size
+first_bytes = os.path.getsize(os.path.join(folder, img_paths[0]))
+map_size = max(int(first_bytes * len(img_paths) * 3), 10 * 1024**3)
 
 print(f"  Images : {len(img_paths)}")
-print(f"  Sample : {sample.shape}  ({sample.nbytes/1e6:.1f} MB uncompressed)")
 print(f"  MapSz  : {map_size/1e9:.1f} GB")
 print(f"  Dest   : {lmdb_path}")
 
@@ -181,14 +181,19 @@ meta = []
 skipped = []
 
 for i, (img_file, key) in enumerate(zip(img_paths, keys)):
-    img = cv2.imread(os.path.join(folder, img_file))
+    fpath = os.path.join(folder, img_file)
+    # Store raw file bytes — avoids decode+reencode corruption on NFS
+    with open(fpath, 'rb') as f:
+        raw = f.read()
+    # Verify the image is readable
+    img = cv2.imdecode(np.frombuffer(raw, np.uint8), cv2.IMREAD_UNCHANGED)
     if img is None:
         print(f"  [WARN] Skipping corrupt image: {img_file}", flush=True)
         skipped.append(img_file)
         continue
-    h, w, c = img.shape
-    _, buf = cv2.imencode('.png', img, [cv2.IMWRITE_PNG_COMPRESSION, 1])
-    txn.put(key.encode(), buf.tobytes())
+    h, w = img.shape[:2]
+    c = img.shape[2] if img.ndim == 3 else 1
+    txn.put(key.encode(), raw)
     meta.append(f"{key}.png ({h},{w},{c}) 1")
     if (i + 1) % 200 == 0:
         txn.commit()
