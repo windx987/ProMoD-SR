@@ -75,7 +75,7 @@ datasets:
 
 # network structures
 network_g:
-  type: ProMoD
+  type: PMD
   upscale: 4
   in_chans: 3
   img_size: 64

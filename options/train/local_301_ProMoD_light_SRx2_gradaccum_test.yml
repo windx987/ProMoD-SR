@@ -44,7 +44,7 @@ datasets:
       type: disk
 
 network_g:
-  type: ProMoD
+  type: PMD
   upscale: 2
   in_chans: 3
   img_size: 64

@@ -43,7 +43,7 @@ def build_capacity_schedule(total_layers, warmup_layers=2):
     return schedule
 
 
-class ProMoDTransformerLayer(nn.Module):
+class PMDTL(nn.Module):
     """PFT Transformer Layer with Mixture-of-Depths routing.
 
     Adds MoD token skipping on top of PFT's progressive focused attention.
@@ -226,7 +226,7 @@ class ProMoDTransformerLayer(nn.Module):
         return flops
 
 
-class ProMoDBasicBlock(nn.Module):
+class PMDBB(nn.Module):
     """Container of ProMoD transformer layers. Carries importance across layers."""
 
     def __init__(self,
@@ -256,7 +256,7 @@ class ProMoDBasicBlock(nn.Module):
             global_layer_id = layer_id + i
             r = capacity_schedule[global_layer_id] if global_layer_id < len(capacity_schedule) else 0.5
             self.layers.append(
-                ProMoDTransformerLayer(
+                PMDTL(
                     dim=dim,
                     block_id=idx,
                     layer_id=global_layer_id,
@@ -326,7 +326,7 @@ class PMDB(nn.Module):
         self.patch_unembed = PatchUnEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=0, embed_dim=dim, norm_layer=None)
 
-        self.residual_group = ProMoDBasicBlock(
+        self.residual_group = PMDBB(
             dim=dim,
             input_resolution=input_resolution,
             idx=idx,
@@ -367,7 +367,7 @@ class PMDB(nn.Module):
 
 
 @ARCH_REGISTRY.register()
-class ProMoD(nn.Module):
+class PMD(nn.Module):
     """ProMoD: Progressive Focused Attention with Mixture of Depths for Image Super-Resolution.
 
     PFT + MoD with PFT's progressive attention cascade as a free routing signal.
@@ -637,7 +637,7 @@ class ProMoD(nn.Module):
 
 
 if __name__ == '__main__':
-    model = ProMoD(
+    model = PMD(
         upscale=2,
         img_size=64,
         embed_dim=52,
