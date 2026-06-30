@@ -270,12 +270,14 @@ done
 
 echo "  DF2K (normal model):"
 DF2K_HR_COUNT=$(ls "$DF2K_HR_FINAL" | wc -l)
+# Allow up to 5 skipped corrupt images without failing verification
+DF2K_MIN=$(( DF2K_HR_COUNT - 5 ))
 for lmdb in "$OUT/DF2K_train_HR.lmdb" "$OUT/DF2K_train_LR_bicubic_X2.lmdb"; do
     if [ -f "$lmdb/meta_info.txt" ]; then
         n=$(wc -l < "$lmdb/meta_info.txt")
-        [ "$n" -ge "$DF2K_HR_COUNT" ] \
+        [ "$n" -ge "$DF2K_MIN" ] \
             && echo -e "    ${GREEN}✓${NC} $(basename $lmdb)  ($n entries)" \
-            || echo -e "    ${RED}✗${NC} $(basename $lmdb)  ($n entries — expected $DF2K_HR_COUNT)"
+            || echo -e "    ${RED}✗${NC} $(basename $lmdb)  ($n entries — expected ~$DF2K_HR_COUNT)"
     else
         echo -e "    ${RED}✗${NC} $(basename $lmdb)  (missing)"
     fi
