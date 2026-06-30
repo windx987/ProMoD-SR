@@ -44,7 +44,7 @@ datasets:
       type: disk
 
 network_g:
-  type: PMD
+  type: PMDModel
   upscale: 2
   in_chans: 3
   img_size: 64

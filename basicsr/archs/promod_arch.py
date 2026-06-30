@@ -367,7 +367,7 @@ class PMDB(nn.Module):
 
 
 @ARCH_REGISTRY.register()
-class PMD(nn.Module):
+class PMDModel(nn.Module):
     """ProMoD: Progressive Focused Attention with Mixture of Depths for Image Super-Resolution.
 
     PFT + MoD with PFT's progressive attention cascade as a free routing signal.
@@ -637,7 +637,7 @@ class PMD(nn.Module):
 
 
 if __name__ == '__main__':
-    model = PMD(
+    model = PMDModel(
         upscale=2,
         img_size=64,
         embed_dim=52,
