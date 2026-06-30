@@ -85,8 +85,10 @@ class MessageLogger():
         epoch = log_vars.pop('epoch')
         current_iter = log_vars.pop('iter')
         lrs = log_vars.pop('lrs')
+        accum_str = log_vars.pop('accum', None)
 
-        message = (f'[{self.exp_name[:5]}..][epoch:{epoch:3d}, iter:{current_iter:8,d}, lr:(')
+        accum_part = f', accum {accum_str}' if accum_str else ''
+        message = (f'[{self.exp_name[:5]}..][epoch:{epoch:3d}, iter:{current_iter:8,d}{accum_part}, lr:(')
         for v in lrs:
             message += f'{v:.3e},'
         message += ')] '

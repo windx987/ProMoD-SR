@@ -207,9 +207,9 @@ def train_pipeline(root_path):
                 log_vars.update({'lrs': model.get_current_learning_rate()})
                 log_vars.update({'time': iter_timer.get_avg_time(), 'data_time': data_timer.get_avg_time()})
                 log_vars.update(model.get_current_log())
-                msg_logger(log_vars)
                 if _accum > 1:
-                    logger.info(f'  accum [{_window_pos}/{_accum}]')
+                    log_vars['accum'] = f'[{_window_pos}/{_accum}]'
+                msg_logger(log_vars)
 
             # save models and training states
             if current_iter % opt['logger']['save_checkpoint_freq'] == 0:
