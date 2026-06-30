@@ -111,17 +111,25 @@ class LmdbBackend(BaseStorageBackend):
             'client_keys and db_paths should have the same length, '
             f'but received {len(client_keys)} and {len(self.db_paths)}.')
 
-        self._client = {}
+        # Store params; defer actual open to first get() call so each
+        # DataLoader worker (forked process) opens its own env handle.
+        self._client_keys = client_keys
+        self._open_kwargs = dict(readonly=readonly, lock=lock,
+                                 readahead=readahead,
+                                 map_size=8 * 1024 * 10485760, **kwargs)
+        self._client = {}   # populated lazily per-process
+        self._pid = None    # tracks which process opened the envs
 
-        for client, path in zip(client_keys, self.db_paths):
-            self._client[client] = lmdb.open(
-                path,
-                readonly=readonly,
-                lock=lock,
-                readahead=readahead,
-                map_size=8*1024*10485760,
-                # max_readers=1,
-                **kwargs)
+    def _ensure_open(self):
+        import os
+        import lmdb
+        pid = os.getpid()
+        if self._pid != pid:
+            # First call in this process (or after fork): open fresh handles.
+            self._client = {}
+            for client, path in zip(self._client_keys, self.db_paths):
+                self._client[client] = lmdb.open(path, **self._open_kwargs)
+            self._pid = pid
 
     def get(self, filepath, client_key):
         """Get values according to the filepath from one lmdb named client_key.
@@ -129,12 +137,12 @@ class LmdbBackend(BaseStorageBackend):
             filepath (str | obj:`Path`): Here, filepath is the lmdb key.
             client_key (str): Used for distinguishing differnet lmdb envs.
         """
+        self._ensure_open()
         filepath = str(filepath)
         assert client_key in self._client, (f'client_key {client_key} is not '
                                             'in lmdb clients.')
         client = self._client[client_key]
         with client.begin(write=False) as txn:
-            # print(filepath.encode('ascii'))
             value_buf = txn.get(filepath.encode('ascii'))
         return value_buf
 
