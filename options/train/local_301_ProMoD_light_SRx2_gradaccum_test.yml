@@ -5,7 +5,7 @@
 # and LR scheduler steps fire every accum_iters iterations.
 
 name: local_301_ProMoD_light_gradaccum_test
-model_type: PFTModel
+model_type: PMDModel
 scale: 2
 num_gpu: 1
 manual_seed: 0

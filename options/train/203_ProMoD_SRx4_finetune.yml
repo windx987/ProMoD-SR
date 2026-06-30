@@ -1,7 +1,7 @@
 
 # general settings
 name: 203_ProMoD_SRx4_finetune
-model_type: PFTModel
+model_type: PMDModel
 scale: 4
 num_gpu: 2
 manual_seed: 0

@@ -1,7 +1,7 @@
 
 # general settings
 name: 302_ProMoD_light_SRx3_finetune
-model_type: PFTModel
+model_type: PMDModel
 scale: 3
 num_gpu: 2
 manual_seed: 0
