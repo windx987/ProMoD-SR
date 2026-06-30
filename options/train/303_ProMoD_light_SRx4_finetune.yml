@@ -22,7 +22,7 @@ datasets:
     use_hflip: true
     use_rot: true
 
-    num_worker_per_gpu: 8
+    num_worker_per_gpu: 4
     batch_size_per_gpu: 4        # 2 GPU × batch 4 × accum 4 = effective 32
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda

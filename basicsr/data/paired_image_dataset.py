@@ -1,3 +1,4 @@
+import random
 from torch.utils import data as data
 from torchvision.transforms.functional import normalize
 
@@ -70,11 +71,21 @@ class PairedImageDataset(data.Dataset):
         # Load gt and lq images. Dimension order: HWC; channel order: BGR;
         # image range: [0, 1], float32.
         gt_path = self.paths[index]['gt_path']
-        img_bytes = self.file_client.get(gt_path, 'gt')
-        img_gt = imfrombytes(img_bytes, float32=True)
         lq_path = self.paths[index]['lq_path']
-        img_bytes = self.file_client.get(lq_path, 'lq')
-        img_lq = imfrombytes(img_bytes, float32=True)
+        # Retry on decode failure (Lustre+LMDB mmap can return undecodable bytes)
+        for _retry in range(5):
+            try:
+                img_bytes = self.file_client.get(gt_path, 'gt')
+                img_gt = imfrombytes(img_bytes, float32=True)
+                img_bytes = self.file_client.get(lq_path, 'lq')
+                img_lq = imfrombytes(img_bytes, float32=True)
+                if img_gt is not None and img_lq is not None:
+                    break
+            except Exception:
+                pass
+            index = random.randint(0, len(self.paths) - 1)
+            gt_path = self.paths[index]['gt_path']
+            lq_path = self.paths[index]['lq_path']
 
         # augmentation for training
         if self.opt['phase'] == 'train':
