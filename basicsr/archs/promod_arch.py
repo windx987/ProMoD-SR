@@ -294,7 +294,7 @@ class ProMoDBasicBlock(nn.Module):
         return flops
 
 
-class ProMoDPFTB(nn.Module):
+class PMDB(nn.Module):
     """ProMoD group block (PFTB equivalent with MoD)."""
 
     def __init__(self,
@@ -449,7 +449,7 @@ class ProMoD(nn.Module):
         self.layers = nn.ModuleList()
         layer_id = 0
         for i_layer in range(self.num_layers):
-            layer = ProMoDPFTB(
+            layer = PMDB(
                 dim=embed_dim,
                 idx=i_layer,
                 layer_id=layer_id,
