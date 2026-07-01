@@ -79,7 +79,13 @@ class Muon(Optimizer):
         adamw_lr: float = 3e-4,
         adamw_betas: tuple = (0.9, 0.99),
         adamw_wd: float = 0.0,
+        betas: tuple = None,
+        weight_decay: float = None,
     ):
+        if betas is not None:
+            adamw_betas = tuple(betas)
+        if weight_decay is not None:
+            adamw_wd = weight_decay
         # Flatten to a plain list of tensors (handle both tensor lists and param-group dicts)
         raw = list(params)
         if raw and isinstance(raw[0], dict):
