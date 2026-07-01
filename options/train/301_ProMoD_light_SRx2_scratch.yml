@@ -93,11 +93,11 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Muon
-    lr: !!float 2e-4
+    lr: !!float 5e-4
     momentum: 0.95
     nesterov: true
     ns_steps: 5
-    adamw_lr: !!float 2e-4
+    adamw_lr: !!float 5e-4
     adamw_betas: [0.9, 0.99]
     adamw_wd: 0.0
 
@@ -107,7 +107,7 @@ train:
     gamma: 0.5
 
   total_iter: 500000
-  warmup_iter: 20000
+  warmup_iter: 5000
 
   # losses
   pixel_opt:
