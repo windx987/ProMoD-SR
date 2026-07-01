@@ -103,8 +103,30 @@ class PMDTL(nn.Module):
             act_layer=act_layer,
         )
 
+    def _compute_amod_scores(self, pfa_values, shift, b, n, device):
+        """A-MoD routing: compute importance from previous layer's attention maps.
+
+        Uses the mean attention weight received by each token across all heads
+        and all query positions in its window — a parameter-free signal.
+        Falls back to uniform (all active) when no previous attention exists.
+        """
+        attn = pfa_values[shift]
+        if attn is None:
+            # No previous layer attention (e.g. layer 0) — all tokens active
+            return torch.ones(b, n, device=device)
+
+        # attn: [B*nW, H, win_n, topk]
+        nw = attn.shape[0] // b
+        win_n = self.window_size * self.window_size
+
+        # Mean over query dimension (dim=-2) then over heads (dim=1)
+        # → how much each token position is attended to on average
+        score = attn.mean(dim=-2).mean(dim=1)  # [B*nW, win_n]
+        score = score.view(b, nw, win_n).reshape(b, n)  # [B, N]
+        return score
+
     def _compute_mod_mask(self, importance, b, n, device):
-        """Compute MoD active mask from importance scores."""
+        """Compute binary A-MoD active mask via top-k selection."""
         if self.capacity_ratio >= 1.0:
             return torch.ones(b, n, 1, device=device)
 
@@ -114,42 +136,11 @@ class PMDTL(nn.Module):
         mask.scatter_(1, active_idx.unsqueeze(-1), 1.0)
         return mask
 
-    def _update_importance(self, importance, pfa_values, active_mask, shift, b, n, device):
-        """Update importance scores from PFA attention values."""
-        attn = pfa_values[shift]
-        if attn is None:
-            return importance
-
-        # attn shape: [B*nW, num_heads, win_size^2, topk]
-        nw = attn.shape[0] // b
-        win_n = self.window_size * self.window_size
-
-        # Per-token max attention (how concentrated this token's attention is)
-        score_per_head = attn.max(dim=-1).values  # [B*nW, num_heads, win_n]
-        score = score_per_head.mean(dim=1)  # [B*nW, win_n]
-
-        # Reshape from windows back to spatial layout
-        score = score.view(b, nw, win_n)  # [B, nW, win_n]
-        score = score.view(b, n)  # [B, N] (windows are contiguous in memory)
-
-        # Active tokens: progressive importance update
-        # Skipped tokens: decay by 0.9
-        active_flat = active_mask.squeeze(-1)  # [B, N]
-        new_importance = importance * (
-            active_flat * (0.5 + 0.5 * score) +
-            (1.0 - active_flat) * 0.9
-        )
-
-        return new_importance
-
-    def forward(self, x, pfa_list, importance, x_size, params):
+    def forward(self, x, pfa_list, x_size, params):
         pfa_values, pfa_indices = pfa_list[0], pfa_list[1]
         h, w = x_size
         b, n, c = x.shape
         c4 = 4 * c
-
-        # --- MoD Routing ---
-        active_mask = self._compute_mod_mask(importance, b, n, x.device)
 
         shortcut = x
         x = self.norm1(x)
@@ -169,6 +160,11 @@ class PMDTL(nn.Module):
         else:
             shift = 0
             shifted_x = x_qkvp.reshape(b, h, w, c4)
+
+        # --- A-MoD Routing: use PREVIOUS layer's attention (already in pfa_values) ---
+        # shift is now known — use matching attention stream from previous layer
+        importance = self._compute_amod_scores(pfa_values, shift, b, n, x.device)
+        active_mask = self._compute_mod_mask(importance, b, n, x.device)
 
         # partition windows
         x_windows = window_partition(shifted_x, self.window_size)
@@ -201,13 +197,8 @@ class PMDTL(nn.Module):
         x_ffn = self.convffn(self.norm2(x), x_size) * active_mask
         x = x + x_ffn
 
-        # --- Update importance ---
-        importance = self._update_importance(
-            importance, pfa_values, active_mask, shift, b, n, x.device,
-        )
-
         pfa_list = [pfa_values, pfa_indices]
-        return x, pfa_list, importance
+        return x, pfa_list
 
     def flops(self, input_resolution=None):
         flops = 0
@@ -278,12 +269,12 @@ class PMDBB(nn.Module):
         else:
             self.downsample = None
 
-    def forward(self, x, pfa_list, importance, x_size, params):
+    def forward(self, x, pfa_list, x_size, params):
         for layer in self.layers:
-            x, pfa_list, importance = layer(x, pfa_list, importance, x_size, params)
+            x, pfa_list = layer(x, pfa_list, x_size, params)
         if self.downsample is not None:
             x = self.downsample(x)
-        return x, pfa_list, importance
+        return x, pfa_list
 
     def flops(self, input_resolution=None):
         flops = 0
@@ -352,9 +343,9 @@ class PMDB(nn.Module):
                 nn.Conv2d(dim // 4, dim // 4, 1, 1, 0), nn.LeakyReLU(negative_slope=0.2, inplace=True),
                 nn.Conv2d(dim // 4, dim, 3, 1, 1))
 
-    def forward(self, x, pfa_list, importance, x_size, params):
-        x_block, pfa_list, importance = self.residual_group(x, pfa_list, importance, x_size, params)
-        return self.patch_embed(self.conv(self.patch_unembed(x_block, x_size))) + x, pfa_list, importance
+    def forward(self, x, pfa_list, x_size, params):
+        x_block, pfa_list = self.residual_group(x, pfa_list, x_size, params)
+        return self.patch_embed(self.conv(self.patch_unembed(x_block, x_size))) + x, pfa_list
 
     def flops(self, input_resolution=None):
         flops = 0
@@ -530,16 +521,12 @@ class PMDModel(nn.Module):
         pfa_list = [pfa_values, pfa_indices]
 
         x = self.patch_embed(x)
-        b, n, c = x.shape
-
-        # Initialize importance: uniform for all tokens
-        importance = torch.ones(b, n, device=x.device)
 
         if self.ape:
             x = x + self.absolute_pos_embed
 
         for layer in self.layers:
-            x, pfa_list, importance = layer(x, pfa_list, importance, x_size, params)
+            x, pfa_list = layer(x, pfa_list, x_size, params)
 
         x = self.norm(x)
         x = self.patch_unembed(x, x_size)
