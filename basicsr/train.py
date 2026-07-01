@@ -169,8 +169,6 @@ def train_pipeline(root_path):
         total_epochs *= _accum
         msg_logger.max_iters = total_iters  # fix ETA to use raw iter count
     _warmup_raw = opt['train'].get('warmup_iter', -1)
-    if _warmup_raw > 0 and _accum > 1:
-        _warmup_raw *= _accum
 
     for epoch in range(start_epoch, total_epochs + 1):
         train_sampler.set_epoch(epoch)
