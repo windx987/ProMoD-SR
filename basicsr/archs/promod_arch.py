@@ -119,9 +119,9 @@ class PMDTL(nn.Module):
         nw = attn.shape[0] // b
         win_n = self.window_size * self.window_size
 
-        # Mean over query dimension (dim=-2) then over heads (dim=1)
-        # → how much each token position is attended to on average
-        score = attn.mean(dim=-2).mean(dim=1)  # [B*nW, win_n]
+        # Mean over selected-key dimension (dim=-1) then over heads (dim=1)
+        # → how much each query token is actively attending (query-based importance)
+        score = attn.mean(dim=-1).mean(dim=1)  # [B*nW, win_n]
         score = score.view(b, nw, win_n).reshape(b, n)  # [B, N]
         return score
 
