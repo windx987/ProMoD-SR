@@ -31,14 +31,12 @@ def build_capacity_schedule(total_layers, warmup_layers=2):
     for l in range(total_layers):
         if l < warmup_layers:
             r = 1.0
-        elif l < 4:
-            r = 0.8
         elif l < 8:
-            r = 0.6
+            r = 0.875
         elif l < 16:
-            r = 0.5
+            r = 0.75
         else:
-            r = 0.4
+            r = 0.625
         schedule.append(r)
     return schedule
 
