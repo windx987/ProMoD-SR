@@ -2,7 +2,10 @@
 ProMoD: Progressive Focused Attention with Mixture of Depths for Image Super-Resolution.
 
 Based on PFT (Progressive Focused Transformer), adding depth-adaptive token routing
-using PFT's progressive attention cascade as a free routing signal.
+using a lightweight learned router (nn.Linear(dim, 1)) per routing layer.
+Routing scores are computed from the current layer's normed input — gradients flow
+through the router every step, preventing the routing collapse seen with
+attention-score-based routing.
 '''
 
 import math
@@ -79,6 +82,11 @@ class PMDTL(nn.Module):
         self.norm1 = norm_layer(dim)
         self.norm2 = norm_layer(dim)
 
+        # Learned router: scores tokens from current layer's normed input.
+        # Only instantiated for routing layers (capacity_ratio < 1.0).
+        if capacity_ratio < 1.0:
+            self.router = nn.Linear(dim, 1, bias=False)
+
         self.wqkv = nn.Linear(dim, 3 * dim, bias=qkv_bias)
 
         self.convlepe_kernel_size = convffn_kernel_size
@@ -100,28 +108,6 @@ class PMDTL(nn.Module):
             kernel_size=convffn_kernel_size,
             act_layer=act_layer,
         )
-
-    def _compute_amod_scores(self, pfa_values, shift, b, n, device):
-        """A-MoD routing: compute importance from previous layer's attention maps.
-
-        Uses the mean attention weight received by each token across all heads
-        and all query positions in its window — a parameter-free signal.
-        Falls back to uniform (all active) when no previous attention exists.
-        """
-        attn = pfa_values[shift]
-        if attn is None:
-            # No previous layer attention (e.g. layer 0) — all tokens active
-            return torch.ones(b, n, device=device)
-
-        # attn: [B*nW, H, win_n, topk]
-        nw = attn.shape[0] // b
-        win_n = self.window_size * self.window_size
-
-        # Mean over selected-key dimension (dim=-1) then over heads (dim=1)
-        # → how much each query token is actively attending (query-based importance)
-        score = attn.mean(dim=-1).mean(dim=1)  # [B*nW, win_n]
-        score = score.view(b, nw, win_n).reshape(b, n)  # [B, N]
-        return score
 
     def _compute_mod_mask(self, importance, b, n, device):
         """Compute binary A-MoD active mask via top-k selection."""
@@ -159,10 +145,12 @@ class PMDTL(nn.Module):
             shift = 0
             shifted_x = x_qkvp.reshape(b, h, w, c4)
 
-        # --- A-MoD Routing: use PREVIOUS layer's attention (already in pfa_values) ---
-        # shift is now known — use matching attention stream from previous layer
-        importance = self._compute_amod_scores(pfa_values, shift, b, n, x.device)
-        active_mask = self._compute_mod_mask(importance, b, n, x.device)
+        # --- LR-MoD Routing: learned router scores from current layer's normed input ---
+        if self.capacity_ratio < 1.0:
+            scores = self.router(x).squeeze(-1)  # x is already norm1'd, [B, N]
+            active_mask = self._compute_mod_mask(scores, b, n, x.device)
+        else:
+            active_mask = torch.ones(b, n, 1, device=x.device)
 
         # partition windows
         x_windows = window_partition(shifted_x, self.window_size)
