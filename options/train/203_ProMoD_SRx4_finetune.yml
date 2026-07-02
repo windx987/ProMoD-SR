@@ -107,7 +107,7 @@ path:
 train:
   ema_decay: 0.999
   optim_g:
-    type: Muon
+    type: AdamW
     lr: !!float 2e-4
     momentum: 0.95
     nesterov: true
