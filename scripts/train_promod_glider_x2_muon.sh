@@ -59,4 +59,5 @@ torchrun \
     basicsr/train.py \
     -opt "$OPT" \
     --launcher pytorch \
+    --auto_resume \
     2>&1 | tee "$LOG_FILE"
