@@ -55,7 +55,7 @@ mkdir -p scripts/logs
 
 torchrun \
     --nproc_per_node=2 \
-    --master_port=4321 \
+    --master_port=${MASTER_PORT:-4321} \
     basicsr/train.py \
     -opt "$OPT" \
     --launcher pytorch \
