@@ -168,7 +168,12 @@ def train_pipeline(root_path):
         total_iters  *= _accum
         total_epochs *= _accum
         msg_logger.max_iters = total_iters  # fix ETA to use raw iter count
+    # warmup_iter in YAML is in optimizer steps (same unit as total_iter and
+    # scheduler milestones); update_learning_rate compares it against the raw
+    # loop counter, so convert steps -> raw iterations here
     _warmup_raw = opt['train'].get('warmup_iter', -1)
+    if _warmup_raw > 0 and _accum > 1:
+        _warmup_raw *= _accum
 
     for epoch in range(start_epoch, total_epochs + 1):
         train_sampler.set_epoch(epoch)
