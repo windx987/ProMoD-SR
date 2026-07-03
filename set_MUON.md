@@ -2,7 +2,8 @@
 
 How the official `torch.optim.Muon` was set up for ProMoD-SR training, and how
 to use it. Verified working 2026-07-03 (smoke test + 300-iter live DDP training
-run on 2×A100).
+run on 2×A100). Background on why the custom implementation was replaced:
+see `REPORT.md` (root cause #1).
 
 ## Why
 
