@@ -112,16 +112,38 @@ class PMDTL(nn.Module):
             act_layer=act_layer,
         )
 
-    def _compute_mod_mask(self, importance, b, n, device):
-        """Compute binary A-MoD active mask via top-k selection."""
-        if self.capacity_ratio >= 1.0:
-            return torch.ones(b, n, 1, device=device)
+    def _compute_routing_weights(self, x, h, w, b, n):
+        """Soft per-window MoD routing (Raposo et al. style).
 
-        k = max(1, int(math.ceil(self.capacity_ratio * n)))
-        _, active_idx = torch.topk(importance, k, dim=-1)
-        mask = torch.zeros(b, n, 1, device=device)
-        mask.scatter_(1, active_idx.unsqueeze(-1), 1.0)
-        return mask
+        Top-k selection runs within each attention window (win_n tokens),
+        so the routing distribution is identical for any input size.
+        Selected tokens are weighted by sigmoid(score) — the router gets
+        gradients through the output every step; skipped tokens stay 0.
+        """
+        scores = self.router(x)  # [B, N, 1], x is norm1'd
+
+        # Align score map with the attention windows (same shift as x)
+        scores = scores.view(b, h, w, 1)
+        if self.shift_size > 0:
+            scores = torch.roll(scores, shifts=(-self.shift_size, -self.shift_size), dims=(1, 2))
+        score_windows = window_partition(scores, self.window_size)  # [B*nW, ws, ws, 1]
+        win_n = self.window_size * self.window_size
+        score_windows = score_windows.view(-1, win_n)  # [B*nW, win_n]
+
+        # Per-window top-k
+        k = max(1, int(math.ceil(self.capacity_ratio * win_n)))
+        _, active_idx = torch.topk(score_windows, k, dim=-1)
+        mask = torch.zeros_like(score_windows)
+        mask.scatter_(1, active_idx, 1.0)
+
+        weights = mask * torch.sigmoid(score_windows)  # [B*nW, win_n]
+
+        # Back to unshifted [B, N, 1]
+        weights = weights.view(-1, self.window_size, self.window_size, 1)
+        weights = window_reverse(weights, self.window_size, h, w)  # [B, H, W, 1]
+        if self.shift_size > 0:
+            weights = torch.roll(weights, shifts=(self.shift_size, self.shift_size), dims=(1, 2))
+        return weights.reshape(b, n, 1)
 
     def forward(self, x, pfa_list, x_size, params):
         pfa_values, pfa_indices = pfa_list[0], pfa_list[1]
@@ -148,12 +170,11 @@ class PMDTL(nn.Module):
             shift = 0
             shifted_x = x_qkvp.reshape(b, h, w, c4)
 
-        # --- LR-MoD Routing: learned router scores from current layer's normed input ---
+        # --- Soft per-window MoD routing ---
         if self.capacity_ratio < 1.0:
-            scores = self.router(x).squeeze(-1)  # x is already norm1'd, [B, N]
-            active_mask = self._compute_mod_mask(scores, b, n, x.device)
+            active_mask = self._compute_routing_weights(x, h, w, b, n)
         else:
-            active_mask = torch.ones(b, n, 1, device=x.device)
+            active_mask = None
 
         # partition windows
         x_windows = window_partition(shifted_x, self.window_size)
@@ -178,12 +199,16 @@ class PMDTL(nn.Module):
         else:
             attn_x = shifted_x
 
-        # --- Apply MoD mask to attention output ---
-        x_attn = attn_x.view(b, n, c) * active_mask
+        # --- Apply MoD routing weights to attention output ---
+        x_attn = attn_x.view(b, n, c)
+        if active_mask is not None:
+            x_attn = x_attn * active_mask
         x = shortcut + x_attn
 
-        # --- FFN with MoD mask ---
-        x_ffn = self.convffn(self.norm2(x), x_size) * active_mask
+        # --- FFN with MoD routing weights ---
+        x_ffn = self.convffn(self.norm2(x), x_size)
+        if active_mask is not None:
+            x_ffn = x_ffn * active_mask
         x = x + x_ffn
 
         pfa_list = [pfa_values, pfa_indices]
