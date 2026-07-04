@@ -1,9 +1,16 @@
 # ProMoD-SR Training Collapse — Investigation Report
 
-**Period:** 2026-07-01 → 2026-07-03 (ongoing)
+**Period:** 2026-07-01 → 2026-07-04 (RESOLVED)
 **Symptom:** 301 (ProMoD-light ×2) validation PSNR peaks at 25–30K iters around
 31.9–33.0 dB Set5 — *below bicubic interpolation (33.66 dB)* — then plateaus or
 declines while training loss keeps improving. Baseline PFT-light reaches ~38 dB.
+
+**Resolution:** the primary cause was root cause **#6** — the benchmark val LR
+images on the dataset PVC were generated with the wrong kernel. After
+regenerating them, the 300 control (PFT-light reproduction) scores
+**38.21 dB Set5 @ 215K iters**, above the published 38.10. All logged val
+numbers in the run-history table below are invalid as quality measurements;
+they reflect the corrupted benchmark, not the models.
 
 ## Run history
 
@@ -57,6 +64,24 @@ right as the too-fast ramp crossed lr ≈ 3.7e-4.
 upstream recipe (2 GPU × batch 8, no accumulation) so every YAML count is
 trivially an optimizer step.
 
+### 6. PRIMARY: validation LR images used the wrong degradation kernel
+The `Evaluation/*/LRbicx{2,3,4}` dirs on the dataset PVC were generated with
+OpenCV cubic (no antialiasing) instead of MATLAB `imresize` — the universal SR
+benchmark standard, and the kernel the (correct) DIV2K training LR uses.
+Kernel fingerprints: train LR vs MATLAB bicubic ≈ 0.28 (PNG rounding); val LR
+vs MATLAB ≈ 1.59, vs cv2 ≈ 0.23. Every model was trained on one degradation
+and scored on another — as a model sharpens toward the true kernel, its score
+on the mismatched one *falls*, producing the universal "peak then decline
+below bicubic" signature. The faster the optimizer, the earlier the false peak.
+
+Proof: the same 300-control checkpoint scores 30.87 dB (provided files) vs
+37.69 dB (correct MATLAB-bicubic LR) at 20K, and 38.21 dB at 215K.
+**Fix:** regenerated `LRbicx{2,3,4}_matlab/` for Set5/Set14/B100/U100/M109
+from GTmod12 via `basicsr.utils.matlab_functions.imresize` (script:
+`~/regen_val_lr.py` on glider; originals untouched); all train configs point
+at the new dirs. **Anything ever validated against the old dirs has
+systematically depressed numbers and should be re-scored.**
+
 ### 5. Operational: deployment and infrastructure traps
 - **Two repo clones on glider.** Training runs from `~/research-sisr/ProMoD-SR`;
   a stale `~/ProMoD-SR` clone absorbed one deployment — run C was a byte-identical
@@ -68,20 +93,17 @@ trivially an optimizer step.
 - **Reverse tunnel outages** (hours-long) are now handled by a state-change
   monitor rather than per-poll warnings.
 
-## Current status & decision tree
+## Final status (2026-07-04)
 
-Control v2 (run F) is the pipeline verdict: stock-PFT-light forward
-(`mod_disable: true`), exact upstream recipe, healthy 5K start (32.75 dB — the
-strongest early checkpoint of any run). A mild decline appeared at 15K while lr
-ramps through 3.75e-4 — the same lr level as the earlier dips, which is
-suspicious, but mid-warmup wobble is not yet pathological.
-
-- **If F recovers and climbs past ~34 by 25–30K** → pipeline exonerated →
-  launch 301 with fixes #2–#4 (soft per-window routing, AdamW upstream recipe).
-- **If F shows the peak-then-decline signature** → run the last isolation
-  control: upstream `PFT` arch + `PFTModel` classes (still untouched in this
-  repo) through our env/data. Healthy → bug hides in the `PMD*` classes even
-  with MoD disabled; sick → env/data-level problem.
+- **300 control / PFT-light baseline reproduction:** stopped at 215K
+  (checkpoints kept, resumable). True score on corrected Set5: **38.21 dB** —
+  above the published 38.10. Pipeline, recipe and arch fully validated.
+- **301 (ProMoD soft per-window routing, AdamW upstream recipe):** launched
+  from scratch 2026-07-04 on both GPUs, validating against the corrected
+  benchmark. Expected healthy band at 5–20K: ~35–37.5 dB (control was 37.69 @
+  20K). If it lands markedly below the control's curve, the gap measures the
+  real cost of MoD token skipping — tune capacity schedule / warmup layers,
+  not the training setup.
 
 ## Follow-up queued
 
