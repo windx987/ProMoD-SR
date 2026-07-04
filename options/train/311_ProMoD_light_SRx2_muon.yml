@@ -35,7 +35,7 @@ datasets:
     name: Set5
     type: PairedImageDataset
     dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx2
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx2_matlab
     io_backend:
       type: disk
 
@@ -43,7 +43,7 @@ datasets:
     name: Set14
     type: PairedImageDataset
     dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/LRbicx2
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set14/LRbicx2_matlab
     io_backend:
       type: disk
 
@@ -51,7 +51,7 @@ datasets:
     name: BSD100
     type: PairedImageDataset
     dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/LRbicx2
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/B100/LRbicx2_matlab
     io_backend:
       type: disk
 
