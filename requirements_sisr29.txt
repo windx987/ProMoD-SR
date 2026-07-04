@@ -1,0 +1,31 @@
+# SISR29 env — PyTorch 2.9.1 with official torch.optim.Muon
+# Requires Python >= 3.10 (env uses 3.11). See set_MUON.md / scripts/setup_muon_env.sh
+# cu126 wheels run on any CUDA 12.x driver (minor-version compatibility);
+# do NOT use cu130 on drivers < 13.0.
+--extra-index-url https://download.pytorch.org/whl/cu126
+
+torch==2.9.1
+torchvision==0.24.1
+
+# BasicSR runtime deps
+numpy
+opencv-python-headless
+pyyaml
+tqdm
+requests
+lmdb
+scipy
+pillow
+tb-nightly
+yapf
+addict
+future
+scikit-image
+
+# arch deps (pft_arch imports fairscale; timm/einops used by other archs)
+fairscale
+einops
+timm
+
+# build speed for smm_cuda
+ninja

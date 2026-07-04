@@ -29,7 +29,16 @@ The regular `SISR` env (Python 3.9, torch 2.5) cannot run torch 2.9
 | PyTorch | 2.9.1+cu126 |
 | Why cu126 works on the 12.4 driver | CUDA 12.x minor-version compatibility — any 12.x runtime runs on a 12.x driver. (cu130 wheels do **not** work: CUDA 13 needs a driver-major upgrade.) |
 
-### How it was built (for reproduction)
+### How to (re)build it
+
+One command (idempotent, pinned deps in `requirements_sisr29.txt`):
+
+```bash
+bash scripts/setup_muon_env.sh                       # glider defaults
+bash scripts/setup_muon_env.sh /path/to/miniconda3 SISR29   # elsewhere
+```
+
+### What the script does (manual reference)
 
 ```bash
 CONDA=/mnt/pvc-shared-pvc-environment-ff3ed7c7/miniconda3
