@@ -25,7 +25,7 @@ datasets:
 
     # data loader
     num_worker_per_gpu: 8
-    batch_size_per_gpu: 8        # 2 GPU x batch 8 = effective 16 (matches upstream PFT-light)
+    batch_size_per_gpu: 16       # 2 GPU x batch 16 = effective 32 (matches PFT-light paper: eff. batch 32)
     dataset_enlarge_ratio: 1
     prefetch_mode: cuda
     pin_memory: true
@@ -88,10 +88,10 @@ path:
 train:
   ema_decay: 0.999
   optim_g:
-    type: AdamW
+    type: Muon                 # official torch.optim.Muon (needs SISR29 env, see set_MUON.md)
     lr: !!float 5e-4
     weight_decay: 0
-    betas: [0.9, 0.99]
+    betas: [0.9, 0.99]         # AdamW group (biases/norms/convs) only
 
   scheduler:
     type: MultiStepLR
