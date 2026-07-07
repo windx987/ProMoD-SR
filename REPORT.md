@@ -12,6 +12,22 @@ regenerating them, the 300 control (PFT-light reproduction) scores
 numbers in the run-history table below are invalid as quality measurements;
 they reflect the corrupted benchmark, not the models.
 
+## Published target (PFT-light, ×2)
+
+The paper's reference numbers for this exact model class (776K params,
+278.3G FLOPs, effective batch 32) — every comparison in this report is against
+these:
+
+| | Set5 | Set14 | BSD100 |
+|---|------|------|--------|
+| **PSNR (dB)** | 38.36 | 34.19 | 32.43 |
+| **SSIM** | 0.9620 | 0.9232 | 0.9030 |
+
+Our architecture reproduction matches the params/FLOPs almost exactly
+(0.7755M / 278.04G with MoD disabled — see FLOPs section below), which is
+strong evidence the training recipe, not the architecture, is what needs to
+match to reach these numbers.
+
 ## Run history
 
 | # | Config | Optimizer | Routing | Recipe | Set5 trajectory | Outcome |
@@ -188,3 +204,16 @@ Muon optimizer, effective batch 32, corrected val data, launched fresh
 2026-07-06 via the SISR29 env. First checkpoints tracked slightly ahead of the
 batch-16 curve at matched iterations (e.g. 34.77 vs ~34.6 @ 5K), consistent
 with the batch-size hypothesis. Progress continues under `~/train_301.log`.
+
+## Current 301 vs published target (last updated iter 60K, 12% of schedule)
+
+| | Set5 PSNR | Set5 SSIM | Set14 PSNR | BSD100 PSNR |
+|---|-----------|-----------|------------|-------------|
+| **Published target** | 38.36 | 0.9620 | 34.19 | 32.43 |
+| **301 @ 60K** | 38.14 | 0.9615 | 33.77 | 32.32 |
+| **Gap** | −0.22 | −0.0005 | −0.42 | −0.11 |
+
+SSIM is already essentially matched; the remaining PSNR gap is expected to
+narrow further under flat lr (5e-4 until milestone 250K) and then close
+further at each of the four subsequent lr-decay steps (400K/450K/475K/490K),
+per the diminishing-returns pattern observed in the batch-16 run (Phase 1).
