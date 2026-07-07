@@ -120,28 +120,57 @@ statistical tie by 15K and stayed there. 301 was paused at iter 100K
 (Set5 **38.2038**, Set14 **34.0017**, BSD100 32.3849) — both optimizers work
 equally well for this model; Muon shows no clear advantage.
 
-Reconstructed 311 (batch-16) Set5 trajectory (from conversation record — the
-original `~/train_311.log` and its experiment/checkpoint folder were later
-overwritten/deleted during the batch-32 consolidation below, so this table is
-the only surviving record of that run; treat exact digits as approximate,
-the trend and milestones are solid):
+Reconstructed 311 (batch-16) trajectory, full precision (from conversation
+record — the original `~/train_311.log` and its experiment/checkpoint folder
+were later overwritten/deleted during the batch-32 consolidation below, so
+this table is the only surviving record of that run; values are transcribed
+from tool output quoted verbatim earlier in this session, not re-derived from
+the original file — treat as high-confidence but not authoritative):
 
-| Iter | Set5 | Iter | Set5 | Iter | Set5 |
-|------|------|------|------|------|------|
-| 5K | 34.67 | 75K | 38.10 | 145K | 38.16 |
-| 10K | 35.68 | 80K | 38.11 | 150K | 38.16 |
-| 15K | 37.13 | 85K | 38.10 | 155K | 38.17 |
-| 20K | 37.64 | 90K | 38.12 | 160K | 38.17 |
-| 25K | 37.82 | 95K | 38.13 | 165K | 38.18 |
-| 30K | 37.90 | 100K | 38.14 | 170K | 38.18 |
-| 35K | 37.93 | 105K | 38.14 | 175K | 38.18 |
-| 40K | 37.98 | 110K | 38.13 | 180K | 38.18 |
-| 45K | 38.01 | 115K | 38.14 | 185K | 38.19 |
-| 50K | 38.04 | 120K | 38.16 | 190K | 38.18 |
-| 55K | 38.05 | 125K | 38.17 | 195K | 38.19 |
-| 60K | 38.08 | 130K | 38.16 | 200K | 38.19 |
-| 65K | 38.08 | 135K | 38.17 | 205K | 38.20 |
-| 70K | 38.10 | 140K | 38.17 | 210K | **38.20** |
+| Iter | Set5 | Set14 | BSD100 |
+|------|--------|--------|--------|
+| 5K   | 34.6710 | 31.1632 | 30.3955 |
+| 10K  | 35.6847 | 31.8880 | 30.8423 |
+| 15K  | 37.1343 | 32.7364 | 31.6001 |
+| 20K  | 37.6388 | 33.2491 | 31.9588 |
+| 25K  | 37.8211 | 33.4301 | 32.0955 |
+| 30K  | 37.8980 | 33.5299 | 32.1561 |
+| 35K  | 37.9304 | 33.5832 | 32.1899 |
+| 40K  | 37.9802 | 33.6094 | 32.2179 |
+| 45K  | 38.0123 | 33.6701 | 32.2407 |
+| 50K  | 38.0370 | 33.6972 | 32.2590 |
+| 55K  | 38.0504 | 33.6885 | 32.2719 |
+| 60K  | 38.0775 | 33.7106 | 32.2841 |
+| 65K  | 38.0821 | 33.7368 | 32.3028 |
+| 70K  | 38.1043 | 33.7420 | 32.3057 |
+| 75K  | 38.1001 | 33.8023 | 32.3086 |
+| 80K  | 38.1117 | 33.7665 | 32.3134 |
+| 85K  | 38.1037 | 33.7597 | 32.3196 |
+| 90K  | 38.1201 | 33.7849 | 32.3223 |
+| 95K  | 38.1254 | 33.8269 | 32.3296 |
+| 100K | 38.1402 | 33.8430 | 32.3326 |
+| 105K | 38.1411 | 33.8412 | 32.3389 |
+| 110K | 38.1305 | 33.8090 | 32.3408 |
+| 115K | 38.1440 | 33.8796 | 32.3462 |
+| 120K | 38.1623 | 33.8596 | 32.3505 |
+| 125K | 38.1724 | 33.8907 | 32.3548 |
+| 130K | 38.1554 | 33.8950 | 32.3571 |
+| 135K | 38.1736 | 33.8441 | 32.3610 |
+| 140K | 38.1720 | 33.8607 | 32.3599 |
+| 145K | 38.1634 | 33.8955 | 32.3648 |
+| 150K | 38.1644 | 33.8762 | 32.3651 |
+| 155K | 38.1693 | 33.9153 | 32.3665 |
+| 160K | 38.1711 | 33.8927 | 32.3688 |
+| 165K | 38.1772 | 33.8847 | 32.3722 |
+| 170K | 38.1805 | 33.8853 | 32.3747 |
+| 175K | 38.1813 | 33.9146 | 32.3768 |
+| 180K | 38.1791 | 33.9129 | 32.3766 |
+| 185K | 38.1898 | 33.9597 | 32.3808 |
+| 190K | 38.1788 | 33.9212 | 32.3792 |
+| 195K | 38.1874 | 33.9659 | 32.3805 |
+| 200K | 38.1870 | 33.9562 | 32.3814 |
+| 205K | 38.2034 | 33.9660 | 32.3861 |
+| 210K | **38.2038** | **34.0017** | 32.3849 |
 
 **Phase 2 — batch-32 correction.** The published PFT-light numbers (776K
 params, 278.3G FLOPs, ×2: **Set5 38.36 / Set14 34.19 / BSD100 32.43**, effective
