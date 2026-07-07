@@ -107,9 +107,55 @@ systematically depressed numbers and should be re-scored.**
 
 ## Follow-up queued
 
-- **311** (`options/train/311_ProMoD_light_SRx2_muon.yml`): Muon-vs-AdamW A/B,
-  identical to 301 except the optimizer, running in the SISR29 env
-  (PyTorch 2.9.1, official `torch.optim.Muon`). Setup verified end-to-end —
-  see `set_MUON.md`.
 - 302/303 (×3/×4 finetunes) and the 20x normal-model series follow once 301
   validates.
+
+## Muon A/B and the effective-batch-32 consolidation (2026-07-04 → 07-06)
+
+**Phase 1 — 301 (AdamW) vs 311 (Muon), both effective batch 16, MoD active.**
+Ran in parallel on shared GPUs against the corrected benchmark. Near-identical
+curves throughout — Muon led by ~+0.05–0.12 dB at 5–10K, the gap closed to a
+statistical tie by 15K and stayed there. 301 was paused at iter 100K
+(Set5 38.158) to give 311 the full GPUs; 311 continued alone through **210K**
+(Set5 **38.2038**, Set14 **34.0017**, BSD100 32.3849) — both optimizers work
+equally well for this model; Muon shows no clear advantage.
+
+Reconstructed 311 (batch-16) Set5 trajectory (from conversation record — the
+original `~/train_311.log` and its experiment/checkpoint folder were later
+overwritten/deleted during the batch-32 consolidation below, so this table is
+the only surviving record of that run; treat exact digits as approximate,
+the trend and milestones are solid):
+
+| Iter | Set5 | Iter | Set5 | Iter | Set5 |
+|------|------|------|------|------|------|
+| 5K | 34.67 | 75K | 38.10 | 145K | 38.16 |
+| 10K | 35.68 | 80K | 38.11 | 150K | 38.16 |
+| 15K | 37.13 | 85K | 38.10 | 155K | 38.17 |
+| 20K | 37.64 | 90K | 38.12 | 160K | 38.17 |
+| 25K | 37.82 | 95K | 38.13 | 165K | 38.18 |
+| 30K | 37.90 | 100K | 38.14 | 170K | 38.18 |
+| 35K | 37.93 | 105K | 38.14 | 175K | 38.18 |
+| 40K | 37.98 | 110K | 38.13 | 180K | 38.18 |
+| 45K | 38.01 | 115K | 38.14 | 185K | 38.19 |
+| 50K | 38.04 | 120K | 38.16 | 190K | 38.18 |
+| 55K | 38.05 | 125K | 38.17 | 195K | 38.19 |
+| 60K | 38.08 | 130K | 38.16 | 200K | 38.19 |
+| 65K | 38.08 | 135K | 38.17 | 205K | 38.20 |
+| 70K | 38.10 | 140K | 38.17 | 210K | **38.20** |
+
+**Phase 2 — batch-32 correction.** The published PFT-light numbers (776K
+params, 278.3G FLOPs, ×2: **Set5 38.36 / Set14 34.19 / BSD100 32.43**, effective
+batch **32**) surfaced a recipe mismatch: our reproduction trained at effective
+batch 16 (2 GPU × 8), not 32. At iter 210K the gap to target was Set5 −0.16 dB,
+Set14 −0.19 dB, BSD100 −0.04 dB — plausibly attributable to the smaller batch's
+noisier gradient estimate.
+
+**Phase 3 — consolidation.** Rather than maintain two named experiments, `301`
+was reconfigured to `type: Muon` + `batch_size_per_gpu: 16` (effective 32,
+matching the paper) and both prior experiment folders (301's paused AdamW/
+batch-16 run at 100K, and a brief 311 batch-32 restart that only reached
+~100 iters) were wiped. `301` is now the single canonical light-model ×2 run:
+Muon optimizer, effective batch 32, corrected val data, launched fresh
+2026-07-06 via the SISR29 env. First checkpoints tracked slightly ahead of the
+batch-16 curve at matched iterations (e.g. 34.77 vs ~34.6 @ 5K), consistent
+with the batch-size hypothesis. Progress continues under `~/train_301.log`.
