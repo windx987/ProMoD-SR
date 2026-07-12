@@ -85,10 +85,10 @@ train:
   mod_ramp_start: 50000        # dense (r=1.0) until here (optimizer steps)
   mod_ramp_end: 100000         # linear ramp to target capacity schedule
   optim_g:
-    type: Adam
+    type: Muon                 # official torch.optim.Muon (needs SISR29 env, see set_MUON.md)
     lr: !!float 2e-4
     weight_decay: 0
-    betas: [0.9, 0.99]
+    betas: [0.9, 0.99]         # AdamW group (biases/norms/convs) only
 
   scheduler:
     type: CosineAnnealingRestartLR
