@@ -1,6 +1,6 @@
 
 # general settings
-name: 322_ProMoD_light_SRx2_r0625
+name: 322_ProMoD_light_SRx2_r0250
 model_type: PMDModel
 scale: 2
 num_gpu: 2
@@ -77,7 +77,7 @@ network_g:
   resi_connection: '1conv'
   use_checkpoint: false
   mod_warmup_layers: 2
-  mod_capacity: 0.625        # uniform r for non-warmup layers -> 227.58G FLOPs @640x360 (18.1% cut)
+  mod_capacity: 0.25         # uniform r for non-warmup layers -> 177.13G FLOPs @640x360 (36.3% cut)
 
 # path
 path:
