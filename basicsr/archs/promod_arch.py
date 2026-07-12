@@ -25,11 +25,13 @@ from basicsr.archs.pft_arch import (
 )
 
 
-def build_capacity_schedule(total_layers, warmup_layers=2, disable=False):
+def build_capacity_schedule(total_layers, warmup_layers=2, disable=False, capacity=None):
     """Build progressive MoD capacity schedule.
 
     Returns a list of capacity ratios (r) per layer index.
     With disable=True all layers get r=1.0 (identical to stock PFT).
+    With capacity set, all non-warmup layers use that uniform ratio;
+    when None, the default progressive table below applies.
     """
     if disable:
         return [1.0] * total_layers
@@ -37,6 +39,8 @@ def build_capacity_schedule(total_layers, warmup_layers=2, disable=False):
     for l in range(total_layers):
         if l < warmup_layers:
             r = 1.0
+        elif capacity is not None:
+            r = capacity
         elif l < 8:
             r = 0.875
         elif l < 16:
@@ -400,6 +404,7 @@ class PMDModel(nn.Module):
                  resi_connection='1conv',
                  mod_warmup_layers=2,
                  mod_disable=False,
+                 mod_capacity=None,
                  **kwargs):
         super().__init__()
 
@@ -431,7 +436,8 @@ class PMDModel(nn.Module):
         self.window_size = window_size
 
         total_layers = sum(depths)
-        self.capacity_schedule = build_capacity_schedule(total_layers, mod_warmup_layers, disable=mod_disable)
+        self.capacity_schedule = build_capacity_schedule(
+            total_layers, mod_warmup_layers, disable=mod_disable, capacity=mod_capacity)
 
         self.patch_embed = PatchEmbed(
             img_size=img_size, patch_size=patch_size, in_chans=embed_dim,

@@ -10,7 +10,7 @@ import math
 
 # Must import arch modules via basicsr to trigger registry
 from basicsr.archs.pft_arch import PFT
-from basicsr.archs.promod_arch import ProMoD
+from basicsr.archs.promod_arch import PMDModel
 
 # --------------------------------------------------------------------------- #
 # Shared config (matches 101/201 light configs)
@@ -113,7 +113,7 @@ def main():
 
     # Build models
     pft    = PFT(**SHARED_CFG).to(DEVICE)
-    promod = ProMoD(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
+    promod = PMDModel(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
 
     pft_params    = count_params(pft)
     promod_params = count_params(promod)
