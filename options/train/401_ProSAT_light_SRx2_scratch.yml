@@ -1,7 +1,7 @@
 
 # general settings
 name: 401_ProSAT_light_SRx2_scratch
-model_type: ProSATModel
+model_type: PMDModel
 scale: 2
 num_gpu: 2
 manual_seed: 0
@@ -69,7 +69,7 @@ network_g:
   qkv_bias: true
   dta_m_ratio: 0.03
   dta_min_clusters: 16
-  mod_warmup_layers: 2         # schedule: 2x1.0, 2x0.8, 4x0.6, 8x0.5 (avg r=0.625)
+  mod_warmup_layers: 2         # schedule: 2x1.0, 2x0.8, 4x0.6, 8x0.5 (avg r=0.625); active from iter 0
   img_range: 1.
   # 0.7736M params; 4.02G FLOPs @64x64 (16.6% below mod_disable dense)
 
@@ -82,8 +82,6 @@ path:
 # training settings
 train:
   ema_decay: 0.999
-  mod_ramp_start: 50000        # dense (r=1.0) until here (optimizer steps)
-  mod_ramp_end: 100000         # linear ramp to target capacity schedule
   optim_g:
     type: Muon                 # official torch.optim.Muon (needs SISR29 env, see set_MUON.md)
     lr: !!float 2e-4

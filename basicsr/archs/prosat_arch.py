@@ -255,11 +255,9 @@ class PSAB(nn.Module):
                          m_ratio=m_ratio, min_clusters=min_clusters)
         self.ffn = GDFN(dim, int(dim * ffn_ratio))
 
-    def forward(self, x, x_size, importance, ramp):
-        # ramp in [0, 1]: effective r interpolates 1.0 -> capacity_ratio so the
-        # iteration-level MoD warmup (dense -> target) is a single scalar.
+    def forward(self, x, x_size, importance):
         B, N, C = x.shape
-        r = 1.0 - ramp * (1.0 - self.capacity_ratio)
+        r = self.capacity_ratio
         k = min(N, max(1, math.ceil(r * N)))
 
         if k >= N:
@@ -337,12 +335,12 @@ class ProSATGroup(nn.Module):
         ])
         self.conv = nn.Conv2d(dim, dim, 3, 1, 1)
 
-    def forward(self, x, x_size, importance, ramp):
+    def forward(self, x, x_size, importance):
         H, W = x_size
         B, N, C = x.shape
         res = x
         for blk in self.blocks:
-            x, importance = blk(x, x_size, importance, ramp)
+            x, importance = blk(x, x_size, importance)
         x = x.transpose(1, 2).contiguous().view(B, C, H, W)
         x = self.conv(x)
         x = x.flatten(2).transpose(1, 2).contiguous()
@@ -377,8 +375,8 @@ class ProSAT(nn.Module):
     6 heads, GDFN ratio 2.0, DTA 3% / min 16 clusters, MoD schedule
     1.0 -> 0.8 -> 0.6 -> 0.5 (warmup 2 layers).
 
-    `mod_ramp` (0..1) is set per-iteration by ProSATModel for the MoD warmup:
-    0 = fully dense, 1 = target capacity schedule. Defaults to 1 (inference).
+    Routing is active from iteration 0 at the target capacity schedule (no
+    iteration-driven ramp — matches ProMoD's convention).
     """
 
     def __init__(self,
@@ -410,7 +408,6 @@ class ProSAT(nn.Module):
         self.embed_dim = embed_dim
         self.dta_m_ratio = dta_m_ratio
         self.dta_min_clusters = dta_min_clusters
-        self.mod_ramp = 1.0
 
         total_layers = sum(depths)
         self.capacity_schedule = build_prosat_schedule(
@@ -460,9 +457,8 @@ class ProSAT(nn.Module):
         x = x.flatten(2).transpose(1, 2).contiguous()
         x = self.norm_first(x)
         importance = x.new_ones(B, H * W)
-        ramp = self.mod_ramp
         for group in self.groups:
-            x, importance = group(x, x_size, importance, ramp)
+            x, importance = group(x, x_size, importance)
         x = self.norm(x)
         x = x.transpose(1, 2).contiguous().view(B, self.embed_dim, H, W)
         return x
