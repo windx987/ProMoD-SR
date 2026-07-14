@@ -11,6 +11,7 @@ import math
 # Must import arch modules via basicsr to trigger registry
 from basicsr.archs.pft_arch import PFT
 from basicsr.archs.promod_arch import PMDModel
+from basicsr.archs.promod_v1_1_arch import PMDGSModel
 
 # --------------------------------------------------------------------------- #
 # Shared config (matches 101/201 light configs)
@@ -112,11 +113,13 @@ def main():
         print(f"GPU:    {torch.cuda.get_device_name(0)}")
 
     # Build models
-    pft    = PFT(**SHARED_CFG).to(DEVICE)
-    promod = PMDModel(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
+    pft     = PFT(**SHARED_CFG).to(DEVICE)
+    promod  = PMDModel(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
+    promodv11 = PMDGSModel(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
 
-    pft_params    = count_params(pft)
-    promod_params = count_params(promod)
+    pft_params      = count_params(pft)
+    promod_params   = count_params(promod)
+    promodv11_params = count_params(promodv11)
 
     # ------------------------------------------------------------------ #
     # 1. Parameters
@@ -124,27 +127,27 @@ def main():
     hr()
     print("PARAMETERS")
     hr()
-    print(f"  PFT-light    : {pft_params:>10,}  ({pft_params/1e6:.3f}M)")
-    print(f"  ProMoD-light : {promod_params:>10,}  ({promod_params/1e6:.3f}M)")
-    delta = promod_params - pft_params
-    print(f"  Delta        : {delta:>+10,}  ({'same' if delta == 0 else f'{delta:+,}'})")
+    print(f"  PFT-light      : {pft_params:>10,}  ({pft_params/1e6:.3f}M)")
+    print(f"  ProMoD-light   : {promod_params:>10,}  ({promod_params/1e6:.3f}M)")
+    print(f"  ProMoDv1.1     : {promodv11_params:>10,}  ({promodv11_params/1e6:.3f}M)")
 
     # ------------------------------------------------------------------ #
     # 2. FLOPs
     # ------------------------------------------------------------------ #
     hr()
-    print("FLOPs  (model.flops() — theoretical, does not reflect mask-multiply)")
+    print("FLOPs  (model.flops() — v1.0 is theoretical/mask-multiply, does not")
+    print("        reflect actual execution; v1.1's is honest — see PMDTLv1_1.flops)")
     hr()
-    print(f"  {'Resolution':<22}  {'PFT (G)':>10}  {'ProMoD (G)':>12}  {'Ratio':>8}")
+    print(f"  {'Resolution':<22}  {'PFT (G)':>10}  {'ProMoD (G)':>12}  {'v1.1 (G)':>10}")
     hr('·')
     for h, w, label in RESOLUTIONS:
-        pft_f    = measure_flops(pft,    h, w)
-        promod_f = measure_flops(promod, h, w)
-        if pft_f is not None and promod_f is not None:
-            ratio = promod_f / pft_f
-            print(f"  {label:<22}  {pft_f/1e9:>10.2f}  {promod_f/1e9:>12.2f}  {ratio:>8.3f}×")
-        else:
-            print(f"  {label:<22}  {'N/A':>10}  {'N/A':>12}  {'N/A':>8}")
+        pft_f      = measure_flops(pft, h, w)
+        promod_f   = measure_flops(promod, h, w)
+        v11_f      = measure_flops(promodv11, h, w)
+        vals = [f'{v/1e9:>10.2f}' if v is not None else f'{"N/A":>10}' for v in (pft_f,)]
+        vals2 = [f'{v/1e9:>12.2f}' if v is not None else f'{"N/A":>12}' for v in (promod_f,)]
+        vals3 = [f'{v/1e9:>10.2f}' if v is not None else f'{"N/A":>10}' for v in (v11_f,)]
+        print(f"  {label:<22}  {vals[0]}  {vals2[0]}  {vals3[0]}")
 
     # ------------------------------------------------------------------ #
     # 3. Inference latency
@@ -152,15 +155,17 @@ def main():
     hr()
     print(f"INFERENCE LATENCY  (ms, mean ± std over {TIMED_RUNS} runs, batch=1)")
     hr()
-    print(f"  {'Resolution':<22}  {'PFT (ms)':>14}  {'ProMoD (ms)':>14}  {'Speedup':>9}")
+    print(f"  {'Resolution':<22}  {'PFT (ms)':>14}  {'ProMoD (ms)':>14}  {'v1.1 (ms)':>14}  {'v1.1 speedup':>13}")
     hr('·')
     for h, w, label in RESOLUTIONS:
         try:
-            pft_mean,    pft_std    = measure_latency(pft,    h, w)
+            pft_mean, pft_std = measure_latency(pft, h, w)
             promod_mean, promod_std = measure_latency(promod, h, w)
-            speedup = pft_mean / promod_mean
+            v11_mean, v11_std = measure_latency(promodv11, h, w)
+            speedup = pft_mean / v11_mean
             print(f"  {label:<22}  {pft_mean:>7.1f}±{pft_std:>4.1f}  "
-                  f"{promod_mean:>7.1f}±{promod_std:>4.1f}  {speedup:>8.3f}×")
+                  f"{promod_mean:>7.1f}±{promod_std:>4.1f}  "
+                  f"{v11_mean:>7.1f}±{v11_std:>4.1f}  {speedup:>12.3f}×")
         except Exception as e:
             print(f"  {label:<22}  ERROR: {e}")
 
@@ -171,21 +176,23 @@ def main():
         hr()
         print("PEAK GPU MEMORY  (MB, inference, batch=1)")
         hr()
-        print(f"  {'Resolution':<22}  {'PFT (MB)':>10}  {'ProMoD (MB)':>12}  {'Ratio':>8}")
+        print(f"  {'Resolution':<22}  {'PFT (MB)':>10}  {'ProMoD (MB)':>12}  {'v1.1 (MB)':>10}")
         hr('·')
         for h, w, label in RESOLUTIONS:
             try:
-                pft_mem    = measure_memory(pft,    h, w)
+                pft_mem = measure_memory(pft, h, w)
                 promod_mem = measure_memory(promod, h, w)
-                ratio = promod_mem / pft_mem if pft_mem > 0 else float('nan')
-                print(f"  {label:<22}  {pft_mem:>10.1f}  {promod_mem:>12.1f}  {ratio:>8.3f}×")
+                v11_mem = measure_memory(promodv11, h, w)
+                print(f"  {label:<22}  {pft_mem:>10.1f}  {promod_mem:>12.1f}  {v11_mem:>10.1f}")
             except Exception as e:
                 print(f"  {label:<22}  ERROR: {e}")
 
     hr()
-    print("NOTE: FLOPs are from model.flops() which accounts for capacity_ratio r.")
-    print("      Latency and memory reflect actual execution (mask-multiply = same as PFT).")
-    print("      True speedup requires sparse gather/scatter implementation.")
+    print("NOTE: PFT/ProMoD FLOPs are from model.flops(); ProMoD's is theoretical and")
+    print("      does not reflect actual execution (mask-multiply = same latency as PFT).")
+    print("      ProMoDv1.1 (PMDGSModel) implements real gather/scatter execution —")
+    print("      its FLOPs() is corrected accordingly and its latency column above")
+    print("      should show a real speedup over PFT/ProMoD, not just a theoretical one.")
     hr()
 
 
