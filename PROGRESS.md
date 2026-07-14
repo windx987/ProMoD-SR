@@ -6,13 +6,13 @@ investigation history and the published PFT-light target numbers.
 
 ## Current state (2026-07-14)
 
-Two training runs live in parallel across two glider nodes, both GPUs busy
-on each (no free slot for a new experiment right now):
+Three training runs live in parallel across three glider nodes:
 
 | Run | Node | Port | Iter | Status |
 |---|---|---|---|---|
 | 401_ProSAT_light_SRx2_scratch | main | 2200 | ~179K / 500K | **stalled — see below** |
-| 304_PFTlight_muon_dense_SRx2 | new (`c16g2-02-...`) | 2202 | ~58K / 500K | healthy, climbing |
+| 304_PFTlight_muon_dense_SRx2 | node 2 (`c16g2-02-...`) | 2202 | ~58K / 500K | healthy, climbing |
+| 501_ProMoDv1_1_light_SRx2_scratch | node 3 (`c16g2-03-...`) | 2204 | running | smoke-test/verification run, see below |
 
 301 (ProMoD-light, Muon, eff. batch 32) completed 2026-07-12 — see
 `promod_training_recipe` memory / earlier REPORT.md entries for final numbers
@@ -35,9 +35,44 @@ schedule: 7.85% (256.21G vs 278.04G dense @640×360) — v1.0's `flops()`
 optimistically claimed 10.4% by assuming the FFN's depthwise conv and fc1
 could be routed; they can't (same zero-fill risk as ProSAT's GDFN bug, see
 below), so v1.1's corrected formula only routes fc2 and attention's Q side.
-**Still needs**: a real GPU run to confirm actual latency speedup
-(benchmark.py extended with a v1.1 column) and a short smoke train before
-committing to the full 500K run — blocked on a node freeing up.
+
+**GPU verification completed 2026-07-14 on a third node** (`c16g2-03-...`,
+port 2204 — set up identically to node 2: fresh clone, `smm_cuda` built for
+both `SISR`/`SISR29` envs, grad-accum patch, tmux sessions). `benchmark.py`
+(now with a third PMDGSModel column) on a real A100:
+
+| Resolution | PFT (ms) | ProMoD v1.0 (ms) | v1.1 (ms) | v1.1 vs PFT |
+|---|---|---|---|---|
+| 64×64 (train patch) | 124.1±51.7 | 127.4±57.7 | 67.4±10.8 | **1.84× faster** |
+| 128×128 | 172.7±36.9 | 204.3±32.8 | 163.3±9.7 | 1.06× faster |
+| 256×256 | 480.2±20.8 | 523.5±45.0 | 519.1±42.3 | 0.92× (slower) |
+| 320×180 | 501.9±31.2 | 452.3±17.6 | 538.5±44.9 | 0.93× (slower) |
+| 640×360 | 1784.0±163.6 | 1794.9±146.0 | 2180.5±134.7 | 0.82× (slower) |
+
+Peak GPU memory is *higher* for v1.1 at every resolution too (e.g. 20.7GB
+vs 16.7GB @640×360). **Verdict: real gather/scatter is only a net win at
+the training-patch size (64×64); at anything larger it's slower and uses
+more memory than mask-multiply**, despite doing genuinely less arithmetic
+(confirmed correct via the CPU equivalence tests above). This is a hardware-
+efficiency result, not a correctness one — the many small, irregular-memory
+gather/scatter/topk ops (one extra global topk per routed layer just to
+reindex for the FFN, on top of the windowed ones) don't parallelize on a
+GPU as well as PFT's original large regular dense matmuls. Matches why the
+original DeepMind MoD paper and most real MoD deployments need dedicated
+fused/custom kernels to realize wall-clock speedup — naive eager-mode
+PyTorch gather/scatter isn't enough on its own. A short smoke train (501,
+node 3) confirmed training-time correctness separately: 100 iters clean, no
+crash/NaN, real `smm_cuda` invoked successfully for the dense warmup
+layers; per-iteration time (~1.13s) is slower than 304's dense-Muon
+baseline (~0.92s/iter), consistent with the benchmark finding.
+
+**Next step, if pursued further**: this POC validates the *routing decision
+and gradient math* end-to-end (that part is solid) but shows real
+gather/scatter needs custom/fused kernels (or batching many windows'
+gathers into fewer, larger ops) to pay off in wall-clock terms — plain
+`torch.gather`/`torch.scatter_`/`torch.topk` per-layer isn't sufficient.
+Not blocking the rest of the queue; 501 keeps running as a real training
+signal since the mechanism is correct even though the speed goal wasn't met.
 
 ## Goal
 
