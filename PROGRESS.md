@@ -6,17 +6,38 @@ investigation history and the published PFT-light target numbers.
 
 ## Current state (2026-07-14)
 
-Two training runs live in parallel across two glider nodes:
+Two training runs live in parallel across two glider nodes, both GPUs busy
+on each (no free slot for a new experiment right now):
 
 | Run | Node | Port | Iter | Status |
 |---|---|---|---|---|
-| 401_ProSAT_light_SRx2_scratch | main | 2200 | ~155K / 500K | **stalled — see below** |
-| 304_PFTlight_muon_dense_SRx2 | new (`c16g2-02-...`) | 2202 | ~44K / 500K | healthy, climbing |
+| 401_ProSAT_light_SRx2_scratch | main | 2200 | ~179K / 500K | **stalled — see below** |
+| 304_PFTlight_muon_dense_SRx2 | new (`c16g2-02-...`) | 2202 | ~58K / 500K | healthy, climbing |
 
 301 (ProMoD-light, Muon, eff. batch 32) completed 2026-07-12 — see
 `promod_training_recipe` memory / earlier REPORT.md entries for final numbers
 (Set5 38.3198, Set14 34.1400, BSD100 32.4369; BSD100 exceeded the published
 PFT-light target, Set5/Set14 landed ~0.04–0.05 dB short).
+
+**ProMoDv1.1 (PMDGSModel) implemented 2026-07-14** — a new arch
+(`basicsr/archs/promod_v1_1_arch.py`) queued as run 5 (`501_ProMoDv1_1_light_
+SRx2_scratch.yml`), not yet launched (both nodes occupied). Real
+gather/scatter execution of v1.0's already-correct MoD routing math (v1.0 is
+mask-multiply — dense compute, zeroed output; see benchmark.py's header).
+Verified locally on CPU: forward pass at 2 sizes, full gradient coverage
+(including non-zero router gradients), and equivalence against v1.0 —
+bit-exact at the single-layer level, ~6.5e-4 max diff at the full 24-layer
+level, explained by PFA's progressive value-cascade (a per-layer Hadamard
+attention-multiply, active regardless of key-shrink) being dropped in
+routed layers, an expected consequence of the design (see file docstring
+and commit `1a8419f`), not a bug. Honest FLOPs reduction at the 301
+schedule: 7.85% (256.21G vs 278.04G dense @640×360) — v1.0's `flops()`
+optimistically claimed 10.4% by assuming the FFN's depthwise conv and fc1
+could be routed; they can't (same zero-fill risk as ProSAT's GDFN bug, see
+below), so v1.1's corrected formula only routes fc2 and attention's Q side.
+**Still needs**: a real GPU run to confirm actual latency speedup
+(benchmark.py extended with a v1.1 column) and a short smoke train before
+committing to the full 500K run — blocked on a node freeing up.
 
 ## Goal
 
