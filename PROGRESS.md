@@ -4,10 +4,25 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
-## Current state (2026-07-16)
+## Current state (2026-07-19)
 
-401 (ProSAT) has **completed** its full 500K-iteration run (finished
-2026-07-16, 3 days 4:36:03 total training time). Final best results:
+304 (dense PFT-light + Muon reproduction) has **completed** its full
+500K-iteration run (finished 2026-07-19, 5 days 15:07:34 total training
+time). Final best results:
+
+| Benchmark | PSNR (dB) | SSIM |
+|---|---|---|
+| Set5 | 38.3497 @410K | 0.9623 @410K |
+| Set14 | 34.2352 @435K | 0.9232 @435K |
+| BSD100 | 32.4626 @490K | 0.9040 @500K |
+
+Solidly matches/exceeds both 301's ProMoD baseline (Set5 38.3198, Set14
+34.1400, BSD100 32.4369) and the PFT-light published targets across all
+three benchmarks and both metrics — confirms the Muon-optimizer dense
+reproduction is sound. Node 2202 (node 2) is now free.
+
+401 (ProSAT) **completed** 2026-07-16, 3 days 4:36:03 total. Final best
+results:
 
 | Benchmark | PSNR (dB) | SSIM |
 |---|---|---|
@@ -17,14 +32,14 @@ investigation history and the published PFT-light target numbers.
 
 The stall diagnosed below (flat plateau from iter 50K) never fully
 resolved after the mod_ramp removal — final numbers sit noticeably below
-301's ProMoD baseline (Set5 38.3198, Set14 34.1400, BSD100 32.4369) and
-below the PFT-light published targets. The GDFN zero-fill fix (see "Next
-step" below) remains unimplemented; node 2200 (main) is now free.
+301's ProMoD baseline and below the PFT-light published targets. The
+GDFN zero-fill fix (see "Next step" below) remains unimplemented; node
+2200 (main) was freed and reused for 502 (below).
 
-**502_ProMoDv1_1_light_SRx2_r0480 launched 2026-07-16** on the now-free
-main node (port 2200): `PMDGSModel` with `mod_capacity: 0.48` (uniform r
-override for all non-warmup layers, via the existing `mod_capacity` knob
-in `build_capacity_schedule` — no code change needed). Verified directly
+**502_ProMoDv1_1_light_SRx2_r0480 launched 2026-07-16** on the main node
+(port 2200): `PMDGSModel` with `mod_capacity: 0.48` (uniform r override
+for all non-warmup layers, via the existing `mod_capacity` knob in
+`build_capacity_schedule` — no code change needed). Verified directly
 via `model.flops([640, 360])` (not estimated): 221.92G vs 278.04G dense
 = **20.18% honest FLOPs reduction**, a substantially more aggressive cut
 than 501's default progressive schedule (7.85%). Same architecture/code
@@ -33,13 +48,13 @@ train, healthy real training trajectory) — only the capacity value
 differs, so no new correctness verification was needed before launching
 the full 500K run.
 
-Three training runs now live in parallel:
+Two training runs now live in parallel (node 2202 free after 304's
+completion):
 
 | Run | Node | Port | Iter | Status |
 |---|---|---|---|---|
-| 304_PFTlight_muon_dense_SRx2 | node 2 (`c16g2-02-...`) | 2202 | ~235K / 500K | healthy, matching/exceeding published targets |
-| 501_ProMoDv1_1_light_SRx2_scratch | node 3 (`c16g2-03-...`) | 2204 | ~160K / 500K | healthy smoke-test/verification run, see below |
-| 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | just launched | lower-r (0.48) variant, ~20% FLOPs cut, see below |
+| 501_ProMoDv1_1_light_SRx2_scratch | node 3 (`c16g2-03-...`) | 2204 | ~395K / 500K | healthy, no stall signature at any point |
+| 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | ~495K / 500K | lower-r (0.48) variant, ~20% FLOPs cut, nearing completion |
 
 301 (ProMoD-light, Muon, eff. batch 32) completed 2026-07-12 — see
 `promod_training_recipe` memory / earlier REPORT.md entries for final numbers
