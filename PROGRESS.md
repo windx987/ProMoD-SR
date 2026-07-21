@@ -4,7 +4,25 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
-## Current state (2026-07-19)
+## Current state (2026-07-20)
+
+501 (ProMoDv1.1, default progressive schedule) has **completed** its full
+500K-iteration run (finished 2026-07-20, 6 days 3:39:28 total training
+time). Final best results:
+
+| Benchmark | PSNR (dB) | SSIM |
+|---|---|---|
+| Set5 | 38.2597 @500K | 0.9620 @465K |
+| Set14 | 34.1848 @310K | 0.9227 @310K |
+| BSD100 | 32.4095 @440K | 0.9033 @445K |
+
+Lands within ~0.05–0.09 dB of both 301's v1.0 mask-multiply baseline
+(Set5 38.3198, Set14 34.1400, BSD100 32.4369) and 304's dense-Muon
+reproduction (Set5 38.3497, Set14 34.2352, BSD100 32.4626) — actually
+slightly exceeds 301 on Set14 — despite the real gather/scatter
+execution and the 7.85% honest FLOPs cut. Confirms v1.1's routing
+mechanism costs essentially nothing in quality at this (small) capacity
+reduction. Node 2204 (node 3) is now free.
 
 304 (dense PFT-light + Muon reproduction) has **completed** its full
 500K-iteration run (finished 2026-07-19, 5 days 15:07:34 total training
@@ -48,13 +66,36 @@ train, healthy real training trajectory) — only the capacity value
 differs, so no new correctness verification was needed before launching
 the full 500K run.
 
-Two training runs now live in parallel (node 2202 free after 304's
-completion):
+**503_ProMoDv1_1_light_SRx2_r0500_nowarmup launched 2026-07-19** on node
+2 (port 2202, freed by 304's completion): `PMDGSModel` with
+`mod_capacity: 0.5` AND `mod_warmup_layers: 0` — the first run to drop
+the 2-layer dense-warmup exception entirely, so all 24 layers are routed
+at r=0.5 (previous runs 301/501/502 always kept the first 2 layers dense).
+Verified via `model.flops([640,360])`: 198.29G vs 278.04G dense = **28.68%
+honest FLOPs reduction**, the most aggressive cut attempted yet. This is
+untested territory — watching early iterations closely for the ProSAT
+flat-plateau stall signature or the routing-collapse signature (early
+PSNR peak then decline while train loss keeps improving), since no prior
+run has removed the warmup exception. First 100 iters clean (l_pix in
+normal warmup-lr range, no crash).
+
+One training run live; **main node (port 2200, running 502) is still
+unreachable** — the reverse tunnel itself is down (nothing listening
+locally on 2200, confirmed via verbose SSH; not just a slow remote), a
+known "pod restart" failure mode for this HPC setup. Last confirmed 502
+data point is from 2026-07-17 13:29 (iter 110,000) — the persistent
+monitor watching it has been silently stalled since then (no further
+validation lines arrived, and none of the down-detection logic fired
+because the connection attempt itself times out around the same ~10s
+threshold the detector uses, a gap in that script worth fixing). Needs a
+manual tunnel restart from the user's side before 502's current
+iteration/status can be confirmed. Nodes 2202 (node 2) and 2204 (node 3)
+are both idle and available for the next queued run.
 
 | Run | Node | Port | Iter | Status |
 |---|---|---|---|---|
-| 501_ProMoDv1_1_light_SRx2_scratch | node 3 (`c16g2-03-...`) | 2204 | ~395K / 500K | healthy, no stall signature at any point |
-| 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | ~495K / 500K | lower-r (0.48) variant, ~20% FLOPs cut, nearing completion |
+| 503_ProMoDv1_1_light_SRx2_r0500_nowarmup | node 2 (`c16g2-02-...`) | 2202 | ~90K / 500K | healthy, no stall/collapse signature through the 50K mark and beyond, see below |
+| 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | **unknown — tunnel down**, last confirmed 110K/500K @ 2026-07-17 | lower-r (0.48) variant, ~20% FLOPs cut |
 
 301 (ProMoD-light, Muon, eff. batch 32) completed 2026-07-12 — see
 `promod_training_recipe` memory / earlier REPORT.md entries for final numbers

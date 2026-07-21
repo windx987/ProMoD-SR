@@ -12,6 +12,7 @@ import math
 from basicsr.archs.pft_arch import PFT
 from basicsr.archs.promod_arch import PMDModel
 from basicsr.archs.promod_v1_1_arch import PMDGSModel
+from basicsr.archs.promod_moe_arch import PMDMoEModel
 
 # --------------------------------------------------------------------------- #
 # Shared config (matches 101/201 light configs)
@@ -116,10 +117,12 @@ def main():
     pft     = PFT(**SHARED_CFG).to(DEVICE)
     promod  = PMDModel(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
     promodv11 = PMDGSModel(**SHARED_CFG, mod_warmup_layers=2).to(DEVICE)
+    promodmoe = PMDMoEModel(**SHARED_CFG, mod_warmup_layers=2, num_experts=2).to(DEVICE)
 
     pft_params      = count_params(pft)
     promod_params   = count_params(promod)
     promodv11_params = count_params(promodv11)
+    promodmoe_params = count_params(promodmoe)
 
     # ------------------------------------------------------------------ #
     # 1. Parameters
@@ -130,24 +133,28 @@ def main():
     print(f"  PFT-light      : {pft_params:>10,}  ({pft_params/1e6:.3f}M)")
     print(f"  ProMoD-light   : {promod_params:>10,}  ({promod_params/1e6:.3f}M)")
     print(f"  ProMoDv1.1     : {promodv11_params:>10,}  ({promodv11_params/1e6:.3f}M)")
+    print(f"  ProMoD-MoE(e2) : {promodmoe_params:>10,}  ({promodmoe_params/1e6:.3f}M)")
 
     # ------------------------------------------------------------------ #
     # 2. FLOPs
     # ------------------------------------------------------------------ #
     hr()
     print("FLOPs  (model.flops() — v1.0 is theoretical/mask-multiply, does not")
-    print("        reflect actual execution; v1.1's is honest — see PMDTLv1_1.flops)")
+    print("        reflect actual execution; v1.1's is honest — see PMDTLv1_1.flops;")
+    print("        MoE's is honest too but goes UP vs dense, not down — see PMDTLMoE.flops)")
     hr()
-    print(f"  {'Resolution':<22}  {'PFT (G)':>10}  {'ProMoD (G)':>12}  {'v1.1 (G)':>10}")
+    print(f"  {'Resolution':<22}  {'PFT (G)':>10}  {'ProMoD (G)':>12}  {'v1.1 (G)':>10}  {'MoE(e2) (G)':>12}")
     hr('·')
     for h, w, label in RESOLUTIONS:
         pft_f      = measure_flops(pft, h, w)
         promod_f   = measure_flops(promod, h, w)
         v11_f      = measure_flops(promodv11, h, w)
+        moe_f      = measure_flops(promodmoe, h, w)
         vals = [f'{v/1e9:>10.2f}' if v is not None else f'{"N/A":>10}' for v in (pft_f,)]
         vals2 = [f'{v/1e9:>12.2f}' if v is not None else f'{"N/A":>12}' for v in (promod_f,)]
         vals3 = [f'{v/1e9:>10.2f}' if v is not None else f'{"N/A":>10}' for v in (v11_f,)]
-        print(f"  {label:<22}  {vals[0]}  {vals2[0]}  {vals3[0]}")
+        vals4 = [f'{v/1e9:>12.2f}' if v is not None else f'{"N/A":>12}' for v in (moe_f,)]
+        print(f"  {label:<22}  {vals[0]}  {vals2[0]}  {vals3[0]}  {vals4[0]}")
 
     # ------------------------------------------------------------------ #
     # 3. Inference latency
@@ -155,17 +162,17 @@ def main():
     hr()
     print(f"INFERENCE LATENCY  (ms, mean ± std over {TIMED_RUNS} runs, batch=1)")
     hr()
-    print(f"  {'Resolution':<22}  {'PFT (ms)':>14}  {'ProMoD (ms)':>14}  {'v1.1 (ms)':>14}  {'v1.1 speedup':>13}")
+    print(f"  {'Resolution':<22}  {'PFT (ms)':>14}  {'ProMoD (ms)':>14}  {'v1.1 (ms)':>14}  {'MoE(e2) (ms)':>14}")
     hr('·')
     for h, w, label in RESOLUTIONS:
         try:
             pft_mean, pft_std = measure_latency(pft, h, w)
             promod_mean, promod_std = measure_latency(promod, h, w)
             v11_mean, v11_std = measure_latency(promodv11, h, w)
-            speedup = pft_mean / v11_mean
+            moe_mean, moe_std = measure_latency(promodmoe, h, w)
             print(f"  {label:<22}  {pft_mean:>7.1f}±{pft_std:>4.1f}  "
                   f"{promod_mean:>7.1f}±{promod_std:>4.1f}  "
-                  f"{v11_mean:>7.1f}±{v11_std:>4.1f}  {speedup:>12.3f}×")
+                  f"{v11_mean:>7.1f}±{v11_std:>4.1f}  {moe_mean:>7.1f}±{moe_std:>4.1f}")
         except Exception as e:
             print(f"  {label:<22}  ERROR: {e}")
 
@@ -176,14 +183,15 @@ def main():
         hr()
         print("PEAK GPU MEMORY  (MB, inference, batch=1)")
         hr()
-        print(f"  {'Resolution':<22}  {'PFT (MB)':>10}  {'ProMoD (MB)':>12}  {'v1.1 (MB)':>10}")
+        print(f"  {'Resolution':<22}  {'PFT (MB)':>10}  {'ProMoD (MB)':>12}  {'v1.1 (MB)':>10}  {'MoE(e2) (MB)':>12}")
         hr('·')
         for h, w, label in RESOLUTIONS:
             try:
                 pft_mem = measure_memory(pft, h, w)
                 promod_mem = measure_memory(promod, h, w)
                 v11_mem = measure_memory(promodv11, h, w)
-                print(f"  {label:<22}  {pft_mem:>10.1f}  {promod_mem:>12.1f}  {v11_mem:>10.1f}")
+                moe_mem = measure_memory(promodmoe, h, w)
+                print(f"  {label:<22}  {pft_mem:>10.1f}  {promod_mem:>12.1f}  {v11_mem:>10.1f}  {moe_mem:>12.1f}")
             except Exception as e:
                 print(f"  {label:<22}  ERROR: {e}")
 
@@ -193,6 +201,9 @@ def main():
     print("      ProMoDv1.1 (PMDGSModel) implements real gather/scatter execution —")
     print("      its FLOPs() is corrected accordingly and its latency column above")
     print("      should show a real speedup over PFT/ProMoD, not just a theoretical one.")
+    print("      ProMoD-MoE (PMDMoEModel) adds a soft, fully-dense multi-expert FFN —")
+    print("      this is a quality/capacity trade, NOT a FLOPs reduction: its FLOPs and")
+    print("      latency are expected to be HIGHER than ProMoD, not lower.")
     hr()
 
 
