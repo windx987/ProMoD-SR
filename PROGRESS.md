@@ -4,7 +4,7 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
-## Current state (2026-07-20)
+## Current state (2026-07-21)
 
 501 (ProMoDv1.1, default progressive schedule) has **completed** its full
 500K-iteration run (finished 2026-07-20, 6 days 3:39:28 total training
@@ -79,7 +79,30 @@ PSNR peak then decline while train loss keeps improving), since no prior
 run has removed the warmup exception. First 100 iters clean (l_pix in
 normal warmup-lr range, no crash).
 
-One training run live; **main node (port 2200, running 502) is still
+**504_ProMoD_MoE_light_SRx2_e2 launched 2026-07-21** on node 3 (port
+2204, freed by 501's completion): a new architecture, `PMDMoEModel`
+(`basicsr/archs/promod_moe_arch.py`), adding MoE (Mixture-of-Experts,
+width-sparsity) as a capacity/quality axis orthogonal to MoD's existing
+depth-sparsity. Unlike every MoD variant so far, **this is NOT a
+FLOPs-reduction technique** — it's a soft, fully-dense multi-expert FFN:
+`ConvFFN`'s `fc2` is replicated into `num_experts` (2) independent
+branches, computed for every token (no top-k, no gather/scatter, no
+auxiliary load-balancing loss) and combined by a per-token softmax gate.
+Composes cleanly with MoD's existing `active_mask` since the expert
+combination lives entirely inside the dense `convffn()` call — the two
+routers never interact. Design was informed by literature research this
+session: width-MoE's payoff at ~1M-param scale is genuinely uncertain
+(ViMoE), so the safe "dense/soft combination" pattern was chosen over
+top-k+aux-loss or the more novel "integrated MoD+MoE null-expert router"
+(deferred — see plan file). Verified: CPU equivalence at `num_experts=1`
+(bit-identical to `ConvFFN`), gradient coverage across all experts +
+both routers (CPU and, separately, on real GPU with `smm_cuda`), and
+honest FLOPs/params — `num_experts=2` costs **+68.6K params (0.778M →
+0.845M) and +10.46% FLOPs (249.25G → 275.32G @640×360)**, reported
+honestly since this trades compute for quality rather than reducing it.
+First 500 iterations clean (loss 0.258→0.050, monotonic, no crash/NaN).
+
+One MoD run live; **main node (port 2200, running 502) is still
 unreachable** — the reverse tunnel itself is down (nothing listening
 locally on 2200, confirmed via verbose SSH; not just a slow remote), a
 known "pod restart" failure mode for this HPC setup. Last confirmed 502
@@ -89,12 +112,12 @@ validation lines arrived, and none of the down-detection logic fired
 because the connection attempt itself times out around the same ~10s
 threshold the detector uses, a gap in that script worth fixing). Needs a
 manual tunnel restart from the user's side before 502's current
-iteration/status can be confirmed. Nodes 2202 (node 2) and 2204 (node 3)
-are both idle and available for the next queued run.
+iteration/status can be confirmed.
 
 | Run | Node | Port | Iter | Status |
 |---|---|---|---|---|
-| 503_ProMoDv1_1_light_SRx2_r0500_nowarmup | node 2 (`c16g2-02-...`) | 2202 | ~90K / 500K | healthy, no stall/collapse signature through the 50K mark and beyond, see below |
+| 504_ProMoD_MoE_light_SRx2_e2 | node 3 (`c16g2-03-...`) | 2204 | ~500 / 500K | just launched, clean so far, see below |
+| 503_ProMoDv1_1_light_SRx2_r0500_nowarmup | node 2 (`c16g2-02-...`) | 2202 | ~150K / 500K | healthy, no stall/collapse signature through the 50K mark and beyond |
 | 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | **unknown — tunnel down**, last confirmed 110K/500K @ 2026-07-17 | lower-r (0.48) variant, ~20% FLOPs cut |
 
 301 (ProMoD-light, Muon, eff. batch 32) completed 2026-07-12 — see
