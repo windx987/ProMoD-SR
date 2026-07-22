@@ -4,7 +4,39 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
-## Current state (2026-07-21)
+## Current state (2026-07-22)
+
+**Main node (port 2200) pod restarted 2026-07-22 — 502's progress
+(iter 110K+, exact last iteration unknown since the tunnel had been down
+since 2026-07-17) is lost.** The pod restart wiped `/home/glider` entirely
+(fresh hostname, empty home dir) — everything that lived only on
+pod-local storage (the git clone, the `smm_cuda` build, tmux sessions,
+and critically `experiments/`/`tb_logger/`/the training log, all written
+relative to the project root by default) is gone. The shared PVCs
+(datasets, environment/conda, results, backup) survived intact, confirming
+this is a pod-local wipe, not a PVC failure.
+
+**Root-cause fix applied before relaunching**: `basicsr/train.py` writes
+`experiments/<name>/` (checkpoints, training state) and `tb_logger/<name>/`
+relative to the project root by default — pod-local, so a future restart
+would wipe them again. Fixed by symlinking both into the persistent
+results PVC (`/mnt/pvc-shared-pvc-results-8da1bd63/{experiments,tb_logger}`)
+before relaunching, and by redirecting the training log directly to that
+PVC too (`.../results-8da1bd63/logs/train_502.log`, with `~/train_502.log`
+symlinked to it so existing monitor commands keep working unchanged). This
+fix was applied on the main node only so far — node 2 (2202, running 503)
+and node 3 (2204, running 504) are still writing to pod-local storage and
+would lose progress on a similar restart; worth applying the same symlink
+fix there at a safe pause point, without disrupting their live runs.
+
+**502 relaunched from scratch** (iter 0) on the rebuilt main node: fresh
+clone, `smm_cuda` rebuilt for SISR29 (env itself survived on the PVC —
+only the pod-local `.so` needed rebuilding), grad-accum patch reapplied,
+tmux sessions recreated. First 100 iterations clean (l_pix in normal
+warmup-lr range). Unfortunately the prior ~110K+ iterations of progress
+on this run are unrecoverable — no checkpoint survived the wipe.
+
+## Previous state (2026-07-21)
 
 501 (ProMoDv1.1, default progressive schedule) has **completed** its full
 500K-iteration run (finished 2026-07-20, 6 days 3:39:28 total training
@@ -116,9 +148,9 @@ iteration/status can be confirmed.
 
 | Run | Node | Port | Iter | Status |
 |---|---|---|---|---|
-| 504_ProMoD_MoE_light_SRx2_e2 | node 3 (`c16g2-03-...`) | 2204 | ~500 / 500K | just launched, clean so far, see below |
-| 503_ProMoDv1_1_light_SRx2_r0500_nowarmup | node 2 (`c16g2-02-...`) | 2202 | ~150K / 500K | healthy, no stall/collapse signature through the 50K mark and beyond |
-| 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | **unknown — tunnel down**, last confirmed 110K/500K @ 2026-07-17 | lower-r (0.48) variant, ~20% FLOPs cut |
+| 504_ProMoD_MoE_light_SRx2_e2 | node 3 (`c16g2-03-...`) | 2204 | ~100K / 500K | healthy, clean upward trend, no gate-collapse/stall signature |
+| 503_ProMoDv1_1_light_SRx2_r0500_nowarmup | node 2 (`c16g2-02-...`) | 2202 | ~275K / 500K | healthy, no stall/collapse signature through the 50K mark and beyond |
+| 502_ProMoDv1_1_light_SRx2_r0480 | main | 2200 | **restarted from iter 0** 2026-07-22 (pod wipe lost prior 110K+) | lower-r (0.48) variant, ~20% FLOPs cut; now checkpointing to persistent PVC |
 
 301 (ProMoD-light, Muon, eff. batch 32) completed 2026-07-12 — see
 `promod_training_recipe` memory / earlier REPORT.md entries for final numbers
