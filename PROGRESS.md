@@ -4,7 +4,80 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
-## Current state (2026-07-22)
+## Current state (2026-07-23)
+
+**Applying the same persistent-storage fix to nodes 2/3 caused a brief,
+self-inflicted crash on both 503 and 504 — recovered with minimal loss
+(~3K iterations each), full account below for anyone hitting this again.**
+
+Two mistakes compounded:
+1. **`ln -sfn` nests instead of replacing when the target is an existing
+   real directory.** The fresh clone ships `experiments/pretrained_models/`
+   as a template, so `ln -sfn $PVC/experiments experiments` didn't replace
+   `experiments` — it created `experiments/experiments -> $PVC/...` nested
+   one level too deep. Training then kept writing checkpoints to the real
+   pod-local `experiments/<name>/` (never touching the nested symlink at
+   all), completely undetected until checked directly. Fixed by using `mv`
+   (rename, not delete) to move the real directory out of the way first,
+   then creating the symlink fresh — rename doesn't care whether files
+   inside are open, unlike `rm`, so this is safe to do on a live directory.
+2. **Swapping `tb_logger`'s path out from under an already-running
+   process is not safe**, even via the correct symlink method. PyTorch's
+   `SummaryWriter` opens its event file by path once and its background
+   writer thread re-opens/appends to that same path string on every
+   flush — after the swap, that path no longer resolved (pointed through
+   the new symlink into an as-yet-empty PVC directory), so the writer
+   thread's `FileNotFoundError` propagated back through
+   `tb_logger.add_scalar()` on the **main thread's next logging call**,
+   crashing both 503 and 504's training processes entirely (not just a
+   background-thread-only failure, as first assumed — PyTorch's
+   TensorBoard wrapper explicitly re-raises worker thread exceptions on
+   the caller). Node 1 (502) never hit this because its symlinks were set
+   up *before* its process started, so there was no live path swap.
+
+**Recovery**: confirmed both processes were fully dead (0% GPU), located
+each run's true latest on-disk checkpoint in the pod-local backup
+directory (`ls -t`, not the default alphabetical sort — `net_g_100000.pth`
+sorts before `net_g_95000.pth` alphabetically, which briefly gave a false
+impression of much larger data loss than actually occurred), copied
+`models/` and `training_states/` into the PVC-backed experiments path so
+`--auto_resume` would find them, and relaunched. **503 resumed cleanly
+from iter 340,000 (lost ~3,400 iters of its ~343,400) and 504 from iter
+155,000 (lost ~3,000 of its ~158,000)** — both now healthy and both fully
+on persistent storage going forward. Old pod-local directories
+(`experiments.old-podlocal-backup/`, `tb_logger.old-podlocal-backup/` on
+nodes 2/3) still contain 304/501's completed results plus the full
+checkpoint history and are safe to clean up later at leisure.
+
+## Previous state (2026-07-22)
+
+**Main node (port 2200) pod restarted 2026-07-22 — 502's progress
+(iter 110K+, exact last iteration unknown since the tunnel had been down
+since 2026-07-17) is lost.** The pod restart wiped `/home/glider` entirely
+(fresh hostname, empty home dir) — everything that lived only on
+pod-local storage (the git clone, the `smm_cuda` build, tmux sessions,
+and critically `experiments/`/`tb_logger/`/the training log, all written
+relative to the project root by default) is gone. The shared PVCs
+(datasets, environment/conda, results, backup) survived intact, confirming
+this is a pod-local wipe, not a PVC failure.
+
+**Root-cause fix applied before relaunching**: `basicsr/train.py` writes
+`experiments/<name>/` (checkpoints, training state) and `tb_logger/<name>/`
+relative to the project root by default — pod-local, so a future restart
+would wipe them again. Fixed by symlinking both into the persistent
+results PVC (`/mnt/pvc-shared-pvc-results-8da1bd63/{experiments,tb_logger}`)
+before relaunching, and by redirecting the training log directly to that
+PVC too (`.../results-8da1bd63/logs/train_502.log`, with `~/train_502.log`
+symlinked to it so existing monitor commands keep working unchanged). This
+fix was applied on the main node only so far — node 2 (2202, running 503)
+and node 3 (2204, running 504) are still writing to pod-local storage and
+would lose progress on a similar restart; worth applying the same symlink
+fix there at a safe pause point, without disrupting their live runs.
+
+**502 relaunched from scratch** (iter 0) on the rebuilt main node: fresh
+clone, `smm_cuda` rebuilt for SISR29 (env itself survived on the PVC —
+only the pod-local `.so` needed rebuilding), grad-accum patch reapplied,
+tmux sessions recreated. First 100 iterations clean (l_pix in normal
 
 **Main node (port 2200) pod restarted 2026-07-22 — 502's progress
 (iter 110K+, exact last iteration unknown since the tunnel had been down
