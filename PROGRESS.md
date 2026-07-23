@@ -6,6 +6,31 @@ investigation history and the published PFT-light target numbers.
 
 ## Current state (2026-07-23)
 
+**502's checkpoint saves were silently landing nowhere after its own
+symlink fix — resolved.** After the main node's initial recovery (below),
+502's log kept reporting "Saving models and training states" every 5000
+iters with **zero errors**, yet no `.pth`/`.state` file existed on local
+disk or the PVC — confirmed exhaustively via `namei -l` walking the full
+symlink chain. Root cause: `save_network`/`save_training_state` (both in
+`basicsr/models/base_model.py`) call `torch.save(..., save_path)` with
+**no `os.makedirs` at save time** — the `<name>/models/` and
+`<name>/training_states/` directories are only ever created once, by
+`make_exp_dirs(opt)` at process startup (`train.py` line 113). 502's
+process was never restarted after its `experiments` symlink was fixed
+mid-run, so that directory was never (re-)created at the new PVC
+location — yet `torch.save`'s `FileNotFoundError` should have been caught
+by the surrounding retry/except and logged as "Save model error: ...",
+and it never was. **The exact reason no error surfaced is still
+unresolved** (best guess: some interaction between the live symlink swap
+and NFS client-side directory caching masked the failure rather than
+raising it cleanly) — but the practical fix was simple and confirmed
+working: manually `mkdir -p` the `models/`/`training_states/`
+subdirectories directly on the PVC (no process restart needed, since
+`torch.save` only needs the directory to exist once, not create it
+itself). Verified: the next real save (iter 70,000) produced
+`net_g_70000.pth` and `70000.state` at the correct PVC path, confirming
+the fix holds going forward.
+
 **Applying the same persistent-storage fix to nodes 2/3 caused a brief,
 self-inflicted crash on both 503 and 504 — recovered with minimal loss
 (~3K iterations each), full account below for anyone hitting this again.**
