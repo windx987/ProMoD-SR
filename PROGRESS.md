@@ -4,6 +4,28 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
+## Current state (2026-07-24)
+
+**Fourth compute node added** (`c16g2-04-...`, reverse-tunnel port
+**2206**). Set up with the persistent-storage fix applied *correctly from
+the start* this time (lesson from the 2026-07-23 incident): since nothing
+had ever launched on this fresh clone, `experiments`/`tb_logger` (both
+just the template dirs from `git clone`) were safely `rm -rf`'d and
+replaced with clean top-level symlinks into
+`/mnt/pvc-shared-pvc-results-8da1bd63/{experiments,tb_logger}` *before*
+any training process started — no live-swap risk, no `ln` nesting (no
+pre-existing directory to nest inside of once removed). `smm_cuda` built
+for SISR29, grad-accum patch applied, tmux sessions created, all
+following the established pattern.
+
+**321_ProMoD_light_SRx2_r0500 launched** on node 4 (port 2206): `PMDModel`
+(v1.0 mask-multiply) with `mod_capacity: 0.5` (uniform r, warmup kept),
+Muon, 500K iters — the true same-r v1.0-vs-v1.1 comparison point offered
+earlier this cycle (503/502 are v1.1 at r=0.5/0.48; 321 is the v1.0
+mask-multiply equivalent at r=0.5, config already existed in the repo).
+`experiments_root` confirmed resolving through the clean symlink to the
+PVC before the first checkpoint. First 100 iterations clean.
+
 ## Current state (2026-07-23)
 
 **502's checkpoint saves were silently landing nowhere after its own

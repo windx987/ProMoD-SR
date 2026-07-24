@@ -40,13 +40,23 @@ implemented.
 
 | Run | Arch | Node | Iter | Best-so-far Set5 (PSNR/SSIM) | Best-so-far Set14 | Best-so-far BSD100 |
 |---|---|---|---|---|---|---|
-| **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | main / 2200 | ~67K/500K (13%) — **relaunched from 0 twice after infra incidents, see below** | 38.0544 @65K / 0.9612 | 33.7003 @65K / 0.9189 | 32.2648 @65K / 0.9015 |
-| **503** | ProMoD v1.1, `mod_capacity=0.5`, **no warmup exception** | node 2 / 2202 | ~343K/500K (69%) | 38.2279 @330K / 0.9618 | 34.0355 @285K / 0.9215 | 32.3663 @340K / 0.9026 |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~158K/500K (32%) | 38.2026 @145K / 0.9618 | 33.9684 @145K / 0.9211 | 32.3825 @155K / 0.9030 |
+| **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | main / 2200 | ~165K/500K (33%) — **relaunched from 0 twice after infra incidents, see below** | 38.1629 @160K / 0.9616 | 33.8947 @135K / 0.9208 | 32.3321 @165K / 0.9024 |
+| **503** | ProMoD v1.1, `mod_capacity=0.5`, **no warmup exception** | node 2 / 2202 | ~435K/500K (87%) | 38.2354 @420K / 0.9618 | 34.0264 @345K / 0.9216 | 32.3739 @435K / 0.9027 |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~235K/500K (47%) | 38.2397 @215K / 0.9619 | 34.0885 @220K / 0.9221 | 32.4060 @235K / 0.9033 |
+| **321** | ProMoD v1.0 (mask-multiply), `mod_capacity=0.5` (warmup kept) | node 4 / 2206 | just launched | — | — | — |
 
 None of the in-progress runs have hit a stall or routing-collapse
 signature (early PSNR peak + decline while train loss keeps improving) at
 any point so far, including well past ProSAT's iter-50K failure point.
+
+**321 is the true same-r v1.0-vs-v1.1 comparison** long offered but not
+launched until a fourth node became available: it uses `PMDModel` (v1.0,
+mask-multiply) at `mod_capacity=0.5` with the warmup exception kept —
+directly comparable to 503 (v1.1, same r=0.5, but *without* the warmup
+exception) and closer still to a hypothetical "v1.0 at 503's exact
+schedule" data point. Once both finish, 321 vs 503 isolates the
+mask-multiply-vs-gather/scatter execution question at a much more
+aggressive capacity than 301 vs 501 did.
 
 ## FLOPs accounting (honest, @640×360; dense baseline = 278.04G)
 
