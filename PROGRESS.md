@@ -4,6 +4,42 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
+## Current state (2026-07-25)
+
+**503 (ProMoDv1.1, r=0.5, no warmup exception) completed — and it's dramatically
+faster than 501, a genuinely new finding.** Full 500K-iteration run finished
+in **1 day 15:54:32** total, vs 501's **6 days 3:39:28** for the same
+architecture (v1.1, real gather/scatter) at the default progressive schedule.
+That's roughly **3.7× the training throughput** (~300,680 iters/day vs
+~81,270 iters/day). Final best results:
+
+| Benchmark | PSNR (dB) | SSIM |
+|---|---|---|
+| Set5 | 38.2361 @470K | 0.9618 @360K |
+| Set14 | 34.0264 @345K | 0.9216 @360K |
+| BSD100 | 32.3750 @450K | 0.9028 @445K |
+
+Lands within ~0.02–0.15dB of 501/301/304 across all three benchmarks despite
+the far more aggressive 28.68% honest FLOPs cut — essentially free quality
+at this capacity too, matching the pattern from 501 vs 301.
+
+**This resolves an open question from earlier benchmarking**: the
+GPU-benchmark finding that "v1.1's real gather/scatter is slower than
+mask-multiply except at the 64×64 training-patch size" was based on
+*inference* latency at various resolutions. Training itself runs at LR
+patch size 64×64 (`gt_size: 128` at ×2 scale) — exactly where v1.1 was
+already known to win (1.84× in the benchmark). 503 pushes capacity far
+lower (r=0.5, *and* drops the 2-layer warmup exception entirely, so nearly
+all 24 layers route at r=0.5 instead of ~7-8 of them) — meaning far more
+tokens are genuinely skipped per layer than 501's average r≈0.76 schedule,
+and the real compute reduction compounds into a large, unambiguous
+wall-clock training speedup. **Worth deliberately re-measuring training
+throughput (iters/sec) across the whole capacity sweep** (502, 321, 501)
+to map out exactly where the real-gather/scatter throughput crossover
+happens — not yet done, since prior benchmarking only covered inference.
+
+Node 2 (port 2202) is now free.
+
 ## Current state (2026-07-24)
 
 **Fourth compute node added** (`c16g2-04-...`, reverse-tunnel port

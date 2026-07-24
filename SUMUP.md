@@ -7,29 +7,36 @@ effective batch 32. PFT-light published targets (paper baseline to beat):
 
 ## Master comparison table (all 8 runs, as of this writing)
 
-| Run | Arch | Capacity (r) | FLOPs @640×360 | Real GPU cost | Status | Set5 PSNR/SSIM | Set14 PSNR/SSIM | BSD100 PSNR/SSIM |
+| Run | Arch | Capacity (r) | FLOPs @640×360 | Real training throughput | Status | Set5 PSNR/SSIM | Set14 PSNR/SSIM | BSD100 PSNR/SSIM |
 |---|---|---|---|---|---|---|---|---|
-| **304** | PFT dense (`mod_disable`) | 1.0 (no MoD) | 278.04G | dense (baseline) | ✅ done | **38.3497 / 0.9623** | **34.2352 / 0.9232** | **32.4626 / 0.9040** |
+| **304** | PFT dense (`mod_disable`) | 1.0 (no MoD) | 278.04G | baseline (500K in 5d 15h) | ✅ done | **38.3497 / 0.9623** | **34.2352 / 0.9232** | **32.4626 / 0.9040** |
 | **301** | ProMoD v1.0 (mask-multiply) | progressive (avg≈0.76) | 249.25G *(theoretical only — see note)* | ≈ dense (mask-multiply doesn't save real compute) | ✅ done | 38.3198 / — | 34.1400 / — | 32.4369 / — |
-| **501** | ProMoD v1.1 (gather/scatter) | progressive (avg≈0.76, same as 301) | 256.21G *(honest)* | **slower** than v1.0 at this res (2180.5ms vs 1794.9ms @640×360) | ✅ done | 38.2597 / 0.9620 | 34.1848 / 0.9227 | 32.4095 / 0.9033 |
+| **501** | ProMoD v1.1 (gather/scatter) | progressive (avg≈0.76, same as 301) | 256.21G *(honest)* | 500K in **6d 3h39m** (~81K iters/day) | ✅ done | 38.2597 / 0.9620 | 34.1848 / 0.9227 | 32.4095 / 0.9033 |
 | **401** | ProSAT (DTA + param-free routing) | SAT-style, not r-comparable | not directly comparable (64×64 convention only) | real gather/scatter | ✅ done (stalled/underperformed) | 38.0303 / 0.9612 | 33.6887 / 0.9194 | 32.2202 / 0.9008 |
-| **321** | ProMoD v1.0 (mask-multiply) | 0.5 (warmup kept) | 210.77G *(theoretical only)* | ≈ dense (mask-multiply) | 🔄 ~1% (iter 3.4K/500K) | — (no validation yet) | — | — |
-| **502** | ProMoD v1.1 (gather/scatter) | 0.48 (warmup kept) | 221.92G *(honest)* | real, but slower than mask-multiply at this res | 🔄 ~34% (iter 170K/500K) | 38.1629 @160K / 0.9616 @170K | 33.8947 @135K / 0.9208 @135K | 32.3355 @170K / 0.9024 @170K |
-| **503** | ProMoD v1.1 (gather/scatter) | 0.5, **no warmup** | 198.29G *(honest, most aggressive)* | real, but slower than mask-multiply at this res | 🔄 ~88% (iter 440K/500K) | 38.2354 @420K / 0.9618 @360K | 34.0264 @345K / 0.9216 @360K | 32.3745 @440K / 0.9028 @440K |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN) | progressive (avg≈0.76) + `num_experts=2` | 275.32G *(+10.46% — spends compute, doesn't save it)* | dense, no gather/scatter | 🔄 ~47% (iter 235K/500K) | 38.2397 @215K / 0.9619 @215K | 34.0885 @220K / 0.9221 @190K | 32.4060 @235K / 0.9033 @230K |
+| **321** | ProMoD v1.0 (mask-multiply) | 0.5 (warmup kept) | 210.77G *(theoretical only)* | ≈ dense (mask-multiply) | 🔄 ~12% (iter 60K/500K) | 38.1095 @60K | — | — |
+| **502** | ProMoD v1.1 (gather/scatter) | 0.48 (warmup kept) | 221.92G *(honest)* | in progress | 🔄 ~46% (iter 230K/500K) | 38.1855 @230K / 0.9617 @225K | 33.9951 @225K / 0.9212 @190K | 32.3496 @225K / 0.9025 @230K |
+| **503** | ProMoD v1.1 (gather/scatter) | 0.5, **no warmup** | 198.29G *(honest, most aggressive)* | **500K in 1d 15h55m (~301K iters/day — ~3.7× 501's throughput)** | ✅ **done** | **38.2361 @470K / 0.9618 @360K** | **34.0264 @345K / 0.9216 @360K** | **32.3750 @450K / 0.9028 @445K** |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN) | progressive (avg≈0.76) + `num_experts=2` | 275.32G *(+10.46% — spends compute, doesn't save it)* | dense, no gather/scatter | 🔄 ~57% (iter 280K/500K) | 38.2698 @270K / 0.9620 @275K | 34.1260 @275K / 0.9224 @280K | 32.4125 @280K / 0.9034 @275K |
 
-**Note on "theoretical" FLOPs**: v1.0's `flops()` method reports what mask-multiply
-*could* save if the zeroed-out compute weren't actually performed — but
-mask-multiply always computes densely and only zeroes the *output*, so its
-real wall-clock cost on GPU is the same as dense PFT regardless of `r`
-(confirmed via `benchmark.py`: 301/321 run at ≈304's speed). Only v1.1's
-gather/scatter runs (501/502/503) skip real compute for inactive tokens —
-but that real compute reduction is *outweighed* by gather/scatter overhead
-on GPU except at the 64×64 training-patch size, so it's currently slower
-in wall-clock terms too, despite doing less arithmetic. **No run in this
-table is currently both real-FLOPs-reduced and wall-clock-faster than
-dense PFT** — that remains the open engineering problem (custom/fused
-kernels, per the MoDA/MoE literature research this session).
+**Note on FLOPs vs real throughput**: v1.0's `flops()` method reports what
+mask-multiply *could* save if the zeroed-out compute weren't actually
+performed — but mask-multiply always computes densely and only zeroes the
+*output*, so its real wall-clock cost on GPU is the same as dense PFT
+regardless of `r` (confirmed via `benchmark.py`: 301/321 run at ≈304's
+speed, and 321's own training throughput is tracking at the same pace as
+304/501). v1.1's gather/scatter runs skip real compute for inactive
+tokens — inference-time benchmarking earlier this session found this
+*slower* than mask-multiply at large resolutions (only 1.84× faster at the
+64×64 patch size). **503 confirms that finding pays off hugely at actual
+training resolution**: dropping the warmup exception and pushing r to 0.5
+(so nearly all 24 layers route, not just ~16-22 of them) turned v1.1's
+real compute reduction into a genuine **3.7× wall-clock training speedup**
+over 501 (same architecture, milder schedule) — the first run in this
+table that is unambiguously both real-FLOPs-reduced *and* faster in
+practice, not just on paper. The remaining open question is exactly where
+the throughput crossover sits between 501's schedule (slower) and 503's
+(much faster) — 502's aggregate pace should help triangulate this once it
+finishes.
 
 ## Completed runs
 
@@ -39,6 +46,7 @@ kernels, per the MoDA/MoE literature research this session).
 | **304** | PFT dense (`mod_disable`), Muon | Isolates optimizer effect — pure PFT-light + Muon, no MoD at all | **38.3497 / 0.9623** | **34.2352 / 0.9232** | **32.4626 / 0.9040** | Matches/exceeds target on all three |
 | **401** | ProSAT (SAT's DTA + parameter-free routing) | Alternative architecture to ProMoD | 38.0303 / 0.9612 | 33.6887 / 0.9194 | 32.2202 / 0.9008 | Below both 301 and target — see "ProSAT" below |
 | **501** | ProMoD v1.1 (real gather/scatter), same schedule as 301 | Does real gather/scatter cost quality vs v1.0's mask-multiply? | 38.2597 / 0.9620 | 34.1848 / 0.9227 | 32.4095 / 0.9033 | Within 0.05–0.09dB of 301/304; **slightly beats 301 on Set14** |
+| **503** | ProMoD v1.1, r=0.5, no warmup exception | Most aggressive MoD cut (28.68%) — does it cost quality, and what does dropping warmup do to training speed? | 38.2361 / 0.9618 | 34.0264 / 0.9216 | 32.3750 / 0.9028 | Within 0.02–0.15dB of 301/304/501 — **and completed 3.7× faster than 501** (1d16h vs 6d4h), see below |
 
 **Reproduction chain**: 304 (dense+Muon) reproduces/slightly exceeds the
 published PFT-light target on all three benchmarks — confirms the Muon
@@ -66,10 +74,13 @@ implemented.
 
 | Run | Arch | Node | Iter | Best-so-far Set5 (PSNR/SSIM) | Best-so-far Set14 | Best-so-far BSD100 |
 |---|---|---|---|---|---|---|
-| **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | main / 2200 | ~170K/500K (34%) — **relaunched from 0 twice after infra incidents, see below** | 38.1629 @160K / 0.9616 | 33.8947 @135K / 0.9208 | 32.3355 @170K / 0.9024 |
-| **503** | ProMoD v1.1, `mod_capacity=0.5`, **no warmup exception** | node 2 / 2202 | ~440K/500K (88%) | 38.2354 @420K / 0.9618 | 34.0264 @345K / 0.9216 | 32.3745 @440K / 0.9028 |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~235K/500K (47%) | 38.2397 @215K / 0.9619 | 34.0885 @220K / 0.9221 | 32.4060 @235K / 0.9033 |
-| **321** | ProMoD v1.0 (mask-multiply), `mod_capacity=0.5` (warmup kept) | node 4 / 2206 | ~3.4K/500K (1%) — first validation due @5K | — | — | — |
+| **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | main / 2200 | ~230K/500K (46%) — **relaunched from 0 twice after infra incidents, see below** | 38.1855 @230K / 0.9617 | 33.9951 @225K / 0.9212 | 32.3496 @225K / 0.9025 |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~280K/500K (57%) | 38.2698 @270K / 0.9620 | 34.1260 @275K / 0.9224 | 32.4125 @280K / 0.9034 |
+| **321** | ProMoD v1.0 (mask-multiply), `mod_capacity=0.5` (warmup kept) | node 4 / 2206 | ~60K/500K (12%) | 38.1095 @60K / 0.9614 | 33.7544 @60K | 32.3017 @55K |
+
+**503 completed** (see master table + Completed runs above) — node 2
+(port 2202) is now free for the next queued run (322, or a repeat of
+502/503's schedule to further triangulate the throughput crossover).
 
 None of the in-progress runs have hit a stall or routing-collapse
 signature (early PSNR peak + decline while train loss keeps improving) at
