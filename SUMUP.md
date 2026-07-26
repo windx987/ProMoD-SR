@@ -5,7 +5,7 @@ depths=[2,4,6,6,6] (24 transformer layers), Muon optimizer, 500K iters,
 effective batch 32. PFT-light published targets (paper baseline to beat):
 **Set5 38.36 / Set14 34.19 / BSD100 32.43** (PSNR, dB).
 
-## Master comparison table (all 8 runs, as of this writing)
+## Master comparison table (all 11 runs, as of this writing)
 
 | Run | Arch | Capacity (r) | FLOPs @640×360 | Real training throughput | Status | Set5 PSNR/SSIM | Set14 PSNR/SSIM | BSD100 PSNR/SSIM |
 |---|---|---|---|---|---|---|---|---|
@@ -13,10 +13,17 @@ effective batch 32. PFT-light published targets (paper baseline to beat):
 | **301** | ProMoD v1.0 (mask-multiply) | progressive (avg≈0.76) | 249.25G *(theoretical only — see note)* | ≈ dense (mask-multiply doesn't save real compute) | ✅ done | 38.3198 / — | 34.1400 / — | 32.4369 / — |
 | **501** | ProMoD v1.1 (gather/scatter) | progressive (avg≈0.76, same as 301) | 256.21G *(honest)* | 500K in **6d 3h39m** (~81K iters/day) | ✅ done | 38.2597 / 0.9620 | 34.1848 / 0.9227 | 32.4095 / 0.9033 |
 | **401** | ProSAT (DTA + param-free routing) | SAT-style, not r-comparable | not directly comparable (64×64 convention only) | real gather/scatter | ✅ done (stalled/underperformed) | 38.0303 / 0.9612 | 33.6887 / 0.9194 | 32.2202 / 0.9008 |
-| **321** | ProMoD v1.0 (mask-multiply) | 0.5 (warmup kept) | 210.77G *(theoretical only)* | ≈ dense (mask-multiply) | 🔄 ~12% (iter 60K/500K) | 38.1095 @60K | — | — |
-| **502** | ProMoD v1.1 (gather/scatter) | 0.48 (warmup kept) | 221.92G *(honest)* | in progress | 🔄 ~46% (iter 230K/500K) | 38.1855 @230K / 0.9617 @225K | 33.9951 @225K / 0.9212 @190K | 32.3496 @225K / 0.9025 @230K |
+| **321** | ProMoD v1.0 (mask-multiply) | 0.5 (warmup kept) | 210.77G *(theoretical only)* | ≈ dense (mask-multiply) | ⏹️ **stopped @85K/500K** (v1.0 deprioritized — see note) | 38.1590 @85K / 0.9616 @85K | 33.8230 @70K / 0.9199 @85K | 32.3376 @85K / 0.9024 @85K |
+| **502** | ProMoD v1.1 (gather/scatter) | 0.48 (warmup kept) | 221.92G *(honest)* | in progress | 🔄 ~84% (iter 420K/500K) | 38.2191 @420K / 0.9618 @400K | 34.0776 @385K / 0.9218 @370K | 32.3716 @410K / 0.9029 @410K |
 | **503** | ProMoD v1.1 (gather/scatter) | 0.5, **no warmup** | 198.29G *(honest, most aggressive)* | **500K in 1d 15h55m (~301K iters/day — ~3.7× 501's throughput)** | ✅ **done** | **38.2361 @470K / 0.9618 @360K** | **34.0264 @345K / 0.9216 @360K** | **32.3750 @450K / 0.9028 @445K** |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN) | progressive (avg≈0.76) + `num_experts=2` | 275.32G *(+10.46% — spends compute, doesn't save it)* | dense, no gather/scatter | 🔄 ~57% (iter 280K/500K) | 38.2698 @270K / 0.9620 @275K | 34.1260 @275K / 0.9224 @280K | 32.4125 @280K / 0.9034 @275K |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, e=2) | progressive (avg≈0.76) + `num_experts=2` | 275.32G *(-0.98% vs dense — nets out near-breakeven at this expert count)* | dense, no gather/scatter | 🔄 ~89% (iter 445K/500K) | 38.2916 @435K / 0.9621 @405K | 34.1784 @385K / 0.9226 @385K | 32.4298 @445K / 0.9035 @445K |
+| **505** | ProMoD-**MoE** (e=4) | progressive (avg≈0.76) + `num_experts=4` | 305.80G *(+9.98% vs dense, +11.07% vs 504)* | dense, no gather/scatter | 🔄 ~7% (iter 35K/500K) | 37.9777 @35K / 0.9610 @35K | 33.6008 @35K / 0.9182 @35K | 32.2323 @35K / 0.9012 @35K |
+| **601** | ProMoD-**CLF** (cross-layer feature fusion) | n/a (MoD-free) | 319.95G *(+15.07% vs dense — quality-only, no routing at all)* | not yet measured | 🔄 **just launched** (iter 0/500K) | — | — | — |
+
+**321's stop**: user decision this session to deprioritize v1.0 (mask-multiply)
+entirely, since MoD/PFA/SAT all compete on the same "exploit spatial-token
+redundancy" axis with diminishing returns — see the CLF architecture family
+entry below for the direction chosen instead.
 
 **Note on FLOPs vs real throughput**: v1.0's `flops()` method reports what
 mask-multiply *could* save if the zeroed-out compute weren't actually
@@ -74,26 +81,25 @@ implemented.
 
 | Run | Arch | Node | Iter | Best-so-far Set5 (PSNR/SSIM) | Best-so-far Set14 | Best-so-far BSD100 |
 |---|---|---|---|---|---|---|
-| **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | main / 2200 | ~230K/500K (46%) — **relaunched from 0 twice after infra incidents, see below** | 38.1855 @230K / 0.9617 | 33.9951 @225K / 0.9212 | 32.3496 @225K / 0.9025 |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~280K/500K (57%) | 38.2698 @270K / 0.9620 | 34.1260 @275K / 0.9224 | 32.4125 @280K / 0.9034 |
-| **321** | ProMoD v1.0 (mask-multiply), `mod_capacity=0.5` (warmup kept) | node 4 / 2206 | ~60K/500K (12%) | 38.1095 @60K / 0.9614 | 33.7544 @60K | 32.3017 @55K |
-
-**503 completed** (see master table + Completed runs above) — node 2
-(port 2202) is now free for the next queued run (322, or a repeat of
-502/503's schedule to further triangulate the throughput crossover).
+| **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | node 1 / 2200 | ~420K/500K (84%) — **relaunched from 0 twice after infra incidents, see below** | 38.2191 @420K / 0.9618 | 34.0776 @385K / 0.9218 | 32.3716 @410K / 0.9029 |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~445K/500K (89%) | 38.2916 @435K / 0.9621 | 34.1784 @385K / 0.9226 | 32.4298 @445K / 0.9035 |
+| **505** | ProMoD-**MoE** (`num_experts=4`), default MoD schedule | node 2 / 2202 | ~35K/500K (7%) | 37.9777 @35K / 0.9610 | 33.6008 @35K / 0.9182 | 32.2323 @35K / 0.9012 |
+| **601** | ProMoD-**CLF** (cross-layer feature fusion, MoD-free) | node 4 / 2206 | just launched (0/500K) | — | — | — |
 
 None of the in-progress runs have hit a stall or routing-collapse
 signature (early PSNR peak + decline while train loss keeps improving) at
 any point so far, including well past ProSAT's iter-50K failure point.
 
-**321 is the true same-r v1.0-vs-v1.1 comparison** long offered but not
-launched until a fourth node became available: it uses `PMDModel` (v1.0,
-mask-multiply) at `mod_capacity=0.5` with the warmup exception kept —
-directly comparable to 503 (v1.1, same r=0.5, but *without* the warmup
-exception) and closer still to a hypothetical "v1.0 at 503's exact
-schedule" data point. Once both finish, 321 vs 503 isolates the
-mask-multiply-vs-gather/scatter execution question at a much more
-aggressive capacity than 301 vs 501 did.
+**321 (v1.0, node 4) was stopped this session**, not completed — the user
+decided to deprioritize v1.0/mask-multiply entirely given how little MoD
+buys once PFA's own cascade is accounted for, freeing node 4 for 601 (CLF)
+instead of continuing the v1.0-vs-v1.1 same-r comparison.
+
+**505 tests whether more MoE expert width keeps paying off**: same recipe
+as 504, only `num_experts` raised 2→4. Cost scales linearly in
+`(num_experts-1)` as predicted (measured, not estimated, via
+`benchmark.py`): +134.8K params (0.845M→0.980M), FLOPs 275.32G→305.80G
+(+11.07% vs 504). Too early in training to compare quality against 504 yet.
 
 ## FLOPs accounting (honest, @640×360; dense baseline = 278.04G)
 
@@ -103,7 +109,9 @@ aggressive capacity than 301 vs 501 did.
 | 301/501 schedule (progressive, avg r≈0.76) | 256.21G (v1.1 honest) / 249.25G (v1.0 optimistic) | 7.85% / 10.4% | v1.0's `flops()` over-credits fc1/dwconv as routable; v1.1's is corrected |
 | **502** (r=0.48, warmup kept) | 221.92G | **20.18%** | |
 | **503** (r=0.5, no warmup) | 198.29G | **28.68%** | most aggressive MoD cut attempted |
-| **504** (MoE, e=2, on 301-schedule base) | 275.32G | **−10.46% (i.e. +10.46% cost)** | **not a FLOPs-reduction technique** — trades compute for FFN capacity; params 0.778M→0.845M (+68.6K) |
+| **504** (MoE, e=2, on 301-schedule base) | 275.32G | **−0.98% (nets near-breakeven)** | **not a FLOPs-reduction technique** — MoD's own schedule savings roughly offset MoE's added cost at e=2; params 0.776M→0.845M (+68.6K vs pure-dense reference) |
+| **505** (MoE, e=4, on 301-schedule base) | 305.80G | **−9.98% (i.e. +9.98% cost)** | cost scales linearly in `(num_experts-1)`; params 0.776M→0.980M (+204.5K vs pure-dense reference) |
+| **601** (CLF, MoD-free) | 319.95G | **−15.07% (i.e. +15.07% cost, scale-invariant)** | **quality-only, no routing at all** — native cross-layer feature reuse, not adapted from any external paper; params 0.776M→0.970M (+194.8K) |
 
 Real GPU latency (benchmark.py, A100, batch=1, @640×360): PFT 1784.0ms,
 ProMoD v1.0 1794.9ms (mask-multiply ≈ same as dense, as expected), v1.1
@@ -130,7 +138,33 @@ benchmarked — only FLOPs/params were computed.
   payoff at ~1M-param scale is genuinely uncertain; the "dense/soft
   combination" pattern was chosen as the safe first experiment over
   top-k+aux-loss or the more novel "integrated MoD+MoE null-expert
-  router," which remains deferred).
+  router," which remains deferred). 505 extends this to `num_experts=4`
+  to test whether the payoff keeps scaling with width.
+- **CLF** (`promod_clf_arch.py`, `PMDCLFModel`, new this session): a
+  deliberate pivot away from the MoD/PFA/SAT family entirely. Two research
+  passes this session (including cloning and reading the actual upstream
+  PFT-SR/SAT/IET repos, not just paper summaries) confirmed those three
+  all compete on the same "exploit spatial-token redundancy" axis with
+  diminishing, overlapping returns — and that PFT's own PFA cascade only
+  ever narrows attention *indices* across layers, never carries raw
+  hidden-state *content* forward beyond the standard residual stream. CLF
+  fills that specific, verified-empty gap: a small, gated, per-layer hook
+  into the last `history_window` (default 3) layers' undiluted feature
+  snapshots, fused into the attention-input branch (not the residual
+  `shortcut`). No router, no capacity schedule, no MoD of any kind —
+  quality-only, explicitly labeled as spending compute (+15.07% FLOPs,
+  scale-invariant), same honest framing as MoE's row. Stability-by-
+  construction: `proj` weights zero-init (exact identity at step 0), gate
+  is a raw unconstrained scalar/channel vector (never sigmoid, no
+  saturation region to get stuck in the way ProSAT's `.detach()`-ed router
+  did), and every op is pointwise (no spatial/conv op ever touches the
+  history tensors, ruling out ProSAT's GDFN zero-fill-corruption class by
+  construction). Verified via a staged smoke test before the full 601 run:
+  offline param/FLOPs check (194.8K delta, matched hand estimate), then a
+  2000-iter real-data run confirming 23/24 gates moved off zero-init
+  (layer 0's stayed exactly 0.0, correctly, since it has zero history
+  available) with no NaN and steady, bounded growth (max|gate| 0.001→0.007
+  over 2000 iters).
 
 ## Infrastructure incidents (affects the in-progress numbers above)
 
@@ -165,9 +199,24 @@ another full loss.
 
 ## Open threads
 
-- ProSAT's GDFN zero-fill fix — diagnosed, never implemented.
-- 321/322 (v1.0 mask-multiply at r=0.5/r=0.25) — queued, no node assigned.
+- ProSAT's GDFN zero-fill fix — diagnosed, never implemented. Confirmed
+  this session (via the original SAT repo) that this bug is entirely
+  ProSAT's own addition, not inherited from upstream SAT's design.
+- 322 (v1.0 mask-multiply at r=0.25) — no longer planned; v1.0 deprioritized
+  this session in favor of CLF (see architecture family tree above).
 - MoDA (cross-layer KV attention, arXiv:2603.15619) — researched in depth,
   not implemented; open question whether ProMoD-SR's 24 layers actually
   exhibit the signal-degradation problem MoDA targets (the paper's own
   vision validation needed 64 layers to show the effect). See `MoDA.md`.
+  Distinct from CLF: MoDA operates on attention K/V across layers, CLF
+  operates on residual-stream hidden states — not mutually exclusive.
+- "Integrated MoD+MoE null-expert router" (single router choosing
+  skip-vs-which-expert, replacing today's two independent, non-interacting
+  gates) — considered and deliberately deferred in favor of the safer
+  dense/soft MoE actually shipped (504/505). Still unexplored.
+- CLF's cheap ablations (per its own design notes): `gate_type='channel'`
+  and `fusion_proj=False` — worth trying once 601's full-run quality
+  result is in, to see if the same quality can be had more cheaply.
+- Throughput-crossover mapping between 501/502/503's schedules — still not
+  deliberately measured, flagged as an open measurement in the previous
+  cycle.

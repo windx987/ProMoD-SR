@@ -4,6 +4,79 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
+## Current state (2026-07-26)
+
+**New architecture: ProMoD-CLF (Cross-Layer Feature Fusion), the first
+deliberately non-MoD architectural change this project has made.** User
+observation that triggered this: MoD's router, PFT's own PFA cascade, and
+ProSAT's DTA all compete on the same "exploit spatial-token redundancy"
+axis with diminishing/overlapping returns (MoD alone costs ~0.04–0.05dB
+even at modest capacity ratios). Rather than adapt yet another external
+paper's efficiency mechanism, this session cloned and read the actual
+upstream repos (`CVL-UESTC/PFT-SR`, `PhuTran1005/SAT`, `CVL-UESTC/IET`) to
+verify the gap directly: PFT's PFA cascade only ever narrows attention
+*indices* across layers, never carries raw hidden-state *content* forward
+— confirmed byte-identical to our own copy, so this isn't a fork artifact.
+SAT's real DTA is a clustering/weighted-average merge, never a skip; every
+token stays in the persistent stream always — meaning ProSAT's `.detach()`-ed
+router and its zero-fill-before-conv corruption bug are **our own project's
+additions**, not inherited from the original paper. IET (a newer PFT-based
+paper) extends the cascade further and adds cross-*token* (not cross-layer)
+feature borrowing — orthogonal to, not overlapping with, the axis chosen.
+
+**CLF** (`basicsr/archs/promod_clf_arch.py`, `PMDCLFModel`): a small, gated,
+per-layer hook into the last `history_window=3` layers' raw output features,
+fused into the attention-input branch (not the residual `shortcut`).
+Deliberately MoD-free — no router, no capacity schedule. Stability-by-
+construction: `proj` weights zero-init (exact identity at step 0), gate is
+a raw unconstrained scalar (never sigmoid — no saturation region to get
+stuck in, unlike ProSAT's router), every op pointwise (no spatial/conv op
+touches history, ruling out ProSAT's GDFN corruption class by construction).
+
+Measured (not estimated): 0.970M params vs 0.776M dense (+194.8K, matched
+the hand estimate from planning), 319.95G FLOPs @640×360 (+15.07%,
+scale-invariant — same percentage at 64×64 too).
+
+**Staged verification, all clean**: (1) offline shape/param/FLOPs smoke
+test; (2) a 2000-iter real-data smoke run on node 4 — loss descended
+0.30→0.019 normally, 23/24 gates moved off their zero-init (layer 0's
+correctly stayed exactly 0.0, since it has zero history available at
+`layer_id=0`), no NaN, gate magnitudes grew steadily and boundedly
+(max|gate| 0.001→0.002→0.003→0.004→0.007 across checkpoints at
+500/1000/1500/2000). One real bug caught and fixed during this process:
+`model_type` in both new yaml configs was mistakenly set to `PMDCLFModel`
+(an arch-registry-only name) instead of `PMDModel` (the generic training
+wrapper every ProMoD variant uses — `network_g.type` is what actually
+selects the architecture); confirmed by the same pattern already present
+in 504/505's configs, which I'd read but not applied here on the first
+pass.
+
+**Launched full run 601** (`options/train/601_ProMoD_CLF_light_SRx2_scratch.yml`,
+500K iters, Muon) on node 4 (port 2206), which had just been freed by
+stopping 321.
+
+**321 (v1.0, mask-multiply) stopped this session**, not completed, at
+iter ~85K/500K — user's explicit decision to deprioritize v1.0 entirely
+given the overlap finding above, freeing node 4 for 601.
+
+**Also launched 505** (`options/train/505_ProMoD_MoE_light_SRx2_e4.yml`,
+same recipe as 504 but `num_experts=4` instead of 2) on node 2 (port 2202,
+free since 503 finished) — tests whether MoE's expert-width payoff keeps
+scaling. Measured via `benchmark.py`: 0.980M params (+134.8K vs 504),
+305.80G FLOPs (+11.07% vs 504's 275.32G), cost scaling linearly in
+`(num_experts-1)` exactly as predicted. Discovered while setting this up:
+both node 2 and node 4's repos were several commits behind origin (missing
+`promod_moe_arch.py` entirely on node 2) and each had an identical leftover
+uncommitted debug diff in `basicsr/train.py` (a duplicated line and a minor
+logging-format change, unrelated to any real feature) — stashed safely
+(scoped to just that one file, since a full-worktree stash choked on a
+symlink artifact from the earlier persistent-storage fix — `experiments`
+is now a symlink but git's index still remembered a deleted file at the
+old nested path) and fast-forward pulled on both nodes before launching.
+
+All four in-progress runs (502, 504, 505, 601) confirmed checkpointing
+correctly with no errors as of this writing.
+
 ## Current state (2026-07-25)
 
 **503 (ProMoDv1.1, r=0.5, no warmup exception) completed — and it's dramatically
