@@ -652,8 +652,13 @@ class PMDCLFModel(nn.Module):
 
 
 if __name__ == '__main__':
-    from basicsr.archs.promod_arch import PMDModel
-
+    # NOTE: deliberately does NOT import basicsr.archs.promod_arch here --
+    # doing so forces `import basicsr`, whose __init__.py auto-discovers and
+    # re-imports every *_arch.py file (including this one, already running
+    # as __main__), causing a duplicate @ARCH_REGISTRY.register() error.
+    # For a side-by-side param/FLOPs diff against PMDModel, run a separate
+    # `python3 -c "..."` snippet instead (see PROGRESS.md), which only
+    # imports this file once via the normal package path.
     SHARED_CFG = dict(
         upscale=2,
         img_size=64,
@@ -673,17 +678,19 @@ if __name__ == '__main__':
     )
 
     clf_model = PMDCLFModel(**SHARED_CFG, history_window=3, fusion_gate_type='scalar', fusion_proj=True)
-    dense_model = PMDModel(**SHARED_CFG, mod_warmup_layers=24)  # r=1.0 everywhere -> dense-equivalent
-
     clf_params = sum(p.nelement() for p in clf_model.parameters())
-    dense_params = sum(p.nelement() for p in dense_model.parameters())
 
     x = torch.randn(1, 3, 64, 64)
     out = clf_model(x)
 
     print(f"Output shape: {out.shape}")
     print(f"PMDCLFModel params: {clf_params / 1e6:.3f}M")
-    print(f"PMDModel (dense-equiv) params: {dense_params / 1e6:.3f}M")
-    print(f"CLF param delta: {(clf_params - dense_params):,} ({(clf_params - dense_params) / 1e3:.1f}K)")
     print(f"FLOPs (640x360): {clf_model.flops([640, 360]) / 1e9:.2f}G")
     print(f"FLOPs (320x180): {clf_model.flops([320, 180]) / 1e9:.2f}G")
+    print(f"FLOPs (64x64, train patch): {clf_model.flops([64, 64]) / 1e9:.2f}G")
+
+    gate_stats = clf_model.get_gate_stats()
+    print(f"Gate stats (layer_id: min/mean/max), all should be exactly 0.0 at init:")
+    for lid in sorted(gate_stats):
+        mn, mean, mx = gate_stats[lid]
+        print(f"  layer {lid:2d}: {mn:+.4f} / {mean:+.4f} / {mx:+.4f}")
