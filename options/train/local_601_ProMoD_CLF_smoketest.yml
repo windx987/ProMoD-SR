@@ -112,7 +112,11 @@ val:
 
 logger:
   print_freq: 10
-  save_checkpoint_freq: !!float 1e6   # effectively disabled
+  save_checkpoint_freq: !!float 5e2   # every 500 iters -- lets gate stats be
+                                       # inspected offline from saved
+                                       # checkpoints without touching the
+                                       # shared train.py (in use by other
+                                       # live runs on other nodes)
   use_tb_logger: false
   wandb:
     project: ~
