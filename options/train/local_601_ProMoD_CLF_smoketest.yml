@@ -10,7 +10,7 @@
 # Validation is disabled -- this is a training-dynamics check only.
 
 name: local_601_ProMoD_CLF_smoketest
-model_type: PMDCLFModel
+model_type: PMDModel
 scale: 2
 num_gpu: 2
 manual_seed: 0
