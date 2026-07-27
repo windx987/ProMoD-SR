@@ -6,6 +6,16 @@ investigation history and the published PFT-light target numbers.
 
 ## Current state (2026-07-27)
 
+**502 (ProMoD v1.1, r=0.48) also completed** its full 500K-iteration run on
+node 1 (port 2200), a few hours after 504. Final: Set5 38.2160/0.9618,
+Set14 34.0708/0.9219, BSD100 32.3740/0.9029 — trails 304 (dense) by a
+modest, consistent 0.09–0.14dB across all three benchmarks and both
+metrics for its 20.18% honest FLOPs cut. This is the clearest "real
+gather/scatter routing cost" data point completed so far (v1.1's other
+completed run, 503, cut FLOPs even more aggressively but via a different,
+no-warmup schedule, so isn't quite apples-to-apples with 502's
+warmup-kept 0.48 ratio). Node 1 is now free too.
+
 **504 (ProMoD-MoE, e=2) completed** its full 500K-iteration run on node 3
 (port 2204). Final best: Set5 38.2979/0.9621, Set14 34.1799/0.9226, BSD100
 32.4298/0.9035. Node 3 is now free.
