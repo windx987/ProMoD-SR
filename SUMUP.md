@@ -16,9 +16,19 @@ effective batch 32. PFT-light published targets (paper baseline to beat):
 | **321** | ProMoD v1.0 (mask-multiply) | 0.5 (warmup kept) | 210.77G *(theoretical only)* | ≈ dense (mask-multiply) | ⏹️ **stopped @85K/500K** (v1.0 deprioritized — see note) | 38.1590 @85K / 0.9616 @85K | 33.8230 @70K / 0.9199 @85K | 32.3376 @85K / 0.9024 @85K |
 | **502** | ProMoD v1.1 (gather/scatter) | 0.48 (warmup kept) | 221.92G *(honest)* | in progress | 🔄 ~84% (iter 420K/500K) | 38.2191 @420K / 0.9618 @400K | 34.0776 @385K / 0.9218 @370K | 32.3716 @410K / 0.9029 @410K |
 | **503** | ProMoD v1.1 (gather/scatter) | 0.5, **no warmup** | 198.29G *(honest, most aggressive)* | **500K in 1d 15h55m (~301K iters/day — ~3.7× 501's throughput)** | ✅ **done** | **38.2361 @470K / 0.9618 @360K** | **34.0264 @345K / 0.9216 @360K** | **32.3750 @450K / 0.9028 @445K** |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, e=2) | progressive (avg≈0.76) + `num_experts=2` | 275.32G *(-0.98% vs dense — nets out near-breakeven at this expert count)* | dense, no gather/scatter | 🔄 ~89% (iter 445K/500K) | 38.2916 @435K / 0.9621 @405K | 34.1784 @385K / 0.9226 @385K | 32.4298 @445K / 0.9035 @445K |
-| **505** | ProMoD-**MoE** (e=4) | progressive (avg≈0.76) + `num_experts=4` | 305.80G *(+9.98% vs dense, +11.07% vs 504)* | dense, no gather/scatter | 🔄 ~7% (iter 35K/500K) | 37.9777 @35K / 0.9610 @35K | 33.6008 @35K / 0.9182 @35K | 32.2323 @35K / 0.9012 @35K |
-| **601** | ProMoD-**CLF** (cross-layer feature fusion) | n/a (MoD-free) | 319.95G *(+15.07% vs dense — quality-only, no routing at all)* | not yet measured | 🔄 **just launched** (iter 0/500K) | — | — | — |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, e=2) | progressive (avg≈0.76) + `num_experts=2` | 275.32G *(-0.98% vs dense — nets out near-breakeven at this expert count)* | dense, no gather/scatter | ✅ **done** | 38.2979 @500K / 0.9621 @470K | 34.1799 @495K / 0.9226 @385K | 32.4298 @445K / 0.9035 @485K |
+| **505** | ProMoD-**MoE** (e=4) | progressive (avg≈0.76) + `num_experts=4` | 305.80G *(+9.98% vs dense, +11.07% vs 504)* | dense, no gather/scatter | 🔄 ~18% (iter 90K/500K) | 38.1907 @90K / 0.9617 @90K | 33.8640 @90K / 0.9204 @90K | 32.3622 @90K / 0.9027 @90K |
+| **601** | ProMoD-**CLF** (cross-layer feature fusion) | n/a (MoD-free) | 319.95G *(+15.07% vs dense — quality-only, no routing at all)* | not yet measured | 🔄 ~11% (iter 55K/500K) | 38.1346 @55K / 0.9616 @55K | 33.7887 @55K / 0.9201 @50K | 32.3208 @55K / 0.9022 @55K |
+
+**Matched-iteration comparisons vs 304** (304's log has full iteration history,
+so these compare against 304's own progress at the SAME iteration, not its
+final number — a fairer read for still-in-progress runs): at iter 55K, **601
+is essentially tied with 304** (Set5 +0.0097dB, Set14 −0.0464dB, BSD100
++0.0059dB — all within noise), despite paying +15.07% FLOPs. At iter 90K,
+**505 trails 304** by 0.02–0.13dB across all three benchmarks. At iter 495K,
+**504 (now complete) trailed 304** by a similar 0.03–0.04dB margin throughout.
+So far CLF is the only variant not costing quality at a comparable point in
+training — worth re-checking as all three continue/finish.
 
 **321's stop**: user decision this session to deprioritize v1.0 (mask-multiply)
 entirely, since MoD/PFA/SAT all compete on the same "exploit spatial-token
@@ -54,6 +64,7 @@ finishes.
 | **401** | ProSAT (SAT's DTA + parameter-free routing) | Alternative architecture to ProMoD | 38.0303 / 0.9612 | 33.6887 / 0.9194 | 32.2202 / 0.9008 | Below both 301 and target — see "ProSAT" below |
 | **501** | ProMoD v1.1 (real gather/scatter), same schedule as 301 | Does real gather/scatter cost quality vs v1.0's mask-multiply? | 38.2597 / 0.9620 | 34.1848 / 0.9227 | 32.4095 / 0.9033 | Within 0.05–0.09dB of 301/304; **slightly beats 301 on Set14** |
 | **503** | ProMoD v1.1, r=0.5, no warmup exception | Most aggressive MoD cut (28.68%) — does it cost quality, and what does dropping warmup do to training speed? | 38.2361 / 0.9618 | 34.0264 / 0.9216 | 32.3750 / 0.9028 | Within 0.02–0.15dB of 301/304/501 — **and completed 3.7× faster than 501** (1d16h vs 6d4h), see below |
+| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, e=2), default MoD schedule | Does adding FFN-width capacity buy quality despite costing FLOPs? | 38.2979 / 0.9621 | 34.1799 / 0.9226 | 32.4298 / 0.9035 | Trails 304 by 0.03–0.04dB at matched iterations throughout — spends compute without a clear quality win |
 
 **Reproduction chain**: 304 (dense+Muon) reproduces/slightly exceeds the
 published PFT-light target on all three benchmarks — confirms the Muon
@@ -82,9 +93,11 @@ implemented.
 | Run | Arch | Node | Iter | Best-so-far Set5 (PSNR/SSIM) | Best-so-far Set14 | Best-so-far BSD100 |
 |---|---|---|---|---|---|---|
 | **502** | ProMoD v1.1, `mod_capacity=0.48` (warmup kept) | node 1 / 2200 | ~420K/500K (84%) — **relaunched from 0 twice after infra incidents, see below** | 38.2191 @420K / 0.9618 | 34.0776 @385K / 0.9218 | 32.3716 @410K / 0.9029 |
-| **504** | ProMoD-**MoE** (soft dense multi-expert FFN, `num_experts=2`), default MoD schedule | node 3 / 2204 | ~445K/500K (89%) | 38.2916 @435K / 0.9621 | 34.1784 @385K / 0.9226 | 32.4298 @445K / 0.9035 |
-| **505** | ProMoD-**MoE** (`num_experts=4`), default MoD schedule | node 2 / 2202 | ~35K/500K (7%) | 37.9777 @35K / 0.9610 | 33.6008 @35K / 0.9182 | 32.2323 @35K / 0.9012 |
-| **601** | ProMoD-**CLF** (cross-layer feature fusion, MoD-free) | node 4 / 2206 | just launched (0/500K) | — | — | — |
+| **505** | ProMoD-**MoE** (`num_experts=4`), default MoD schedule | node 2 / 2202 | ~90K/500K (18%) | 38.1907 @90K / 0.9617 | 33.8640 @90K / 0.9204 | 32.3622 @90K / 0.9027 |
+| **601** | ProMoD-**CLF** (cross-layer feature fusion, MoD-free) | node 4 / 2206 | ~55K/500K (11%) — **matched-iteration comparison to 304 shows essentially tied quality so far, see master table note above** | 38.1346 @55K / 0.9616 | 33.7887 @55K / 0.9201 | 32.3208 @55K / 0.9022 |
+
+**504 completed** (see master table + Completed runs above) — node 3
+(port 2204) is now free.
 
 None of the in-progress runs have hit a stall or routing-collapse
 signature (early PSNR peak + decline while train loss keeps improving) at

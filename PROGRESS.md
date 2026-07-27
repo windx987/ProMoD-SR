@@ -4,6 +4,30 @@ Running log of experiment state, decisions, and open issues. Updated as runs
 complete or milestones land. See `REPORT.md` for the deeper training-collapse
 investigation history and the published PFT-light target numbers.
 
+## Current state (2026-07-27)
+
+**504 (ProMoD-MoE, e=2) completed** its full 500K-iteration run on node 3
+(port 2204). Final best: Set5 38.2979/0.9621, Set14 34.1799/0.9226, BSD100
+32.4298/0.9035. Node 3 is now free.
+
+**Matched-iteration comparisons introduced this session**: rather than only
+comparing an in-progress run's current best against 304's *final* number
+(unfair — 304 is fully converged, the other run isn't), pulled 304's own
+validation history from its still-intact log (`~/train_304.log` on node 2)
+at the SAME iteration as each in-progress run, for an apples-to-apples read:
+- **601 (CLF) @ iter 55K vs 304 @ iter 55K**: essentially tied (Set5 +0.0097dB,
+  Set14 −0.0464dB, BSD100 +0.0059dB) — despite CLF paying +15.07% more FLOPs
+  than dense. The only variant not clearly costing quality at a matched point
+  in training so far.
+- **505 (MoE e=4) @ iter 90K vs 304 @ iter 90K**: trails by 0.02–0.13dB across
+  all three benchmarks.
+- **504 (MoE e=2) @ iter 495K vs 304 @ iter 495K**: trailed by a similar
+  0.03–0.04dB margin throughout its run, confirmed now that it's complete.
+
+Worth repeating this matched-iteration comparison again as 505/601 progress
+further, rather than relying on 304's final number as the only reference
+point.
+
 ## Current state (2026-07-26)
 
 **New architecture: ProMoD-CLF (Cross-Layer Feature Fusion), the first
