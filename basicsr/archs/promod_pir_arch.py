@@ -347,8 +347,17 @@ class PMDPIRTL(nn.Module):
         x_ffn = self.convffn(self.norm2(x), x_size, active_idx=active_idx_full) * weights
         x = x + x_ffn
 
-        pfa_values[shift] = self._refresh_pfa_active(
-            pfa_values, shift, attn_active, active_idx, num_heads, key_width, b_)
+        if cached_idx is None:
+            # Cascade refresh only on the first routed layer of this shift
+            # chain per group (same granularity as the routing decision
+            # itself, cached via idx_cache -- see PMDPIRBB.forward). Doing
+            # this every routed layer instead of once per group cloned a
+            # full [b_,heads,win_n,key_width] tensor 22 times per forward
+            # pass (~256MB each at real training batch size) and OOM'd at
+            # batch_size_per_gpu=16 on an A100 -- all 22 had to stay alive
+            # simultaneously for backward. Once per group cuts that to ~8.
+            pfa_values[shift] = self._refresh_pfa_active(
+                pfa_values, shift, attn_active, active_idx, num_heads, key_width, b_)
 
         pfa_list = [pfa_values, pfa_indices]  # indices unchanged — routing never shrinks them
         return x, pfa_list, idx_cache
