@@ -61,6 +61,7 @@ from basicsr.archs.pft_arch import (
     WindowAttention,
     PatchEmbed, PatchUnEmbed,
     Upsample, UpsampleOneStep,
+    SMM_QmK, SMM_AmV,
 )
 from basicsr.archs.promod_arch import build_capacity_schedule
 from basicsr.archs.promod_v1_1_arch import RoutedConvFFN
@@ -283,45 +284,42 @@ class PMDPIRTL(nn.Module):
                 attn_active = attn_active + mask_active.unsqueeze(1)
 
             attn_active = torch.softmax(attn_active, dim=-1)
-            v_narrow = vv  # already full [b_, heads, win_n, head_dim]
+            out = torch.einsum('bhij,bhijd->bhid', attn_active, vv) + v_lepe_active  # [b_,heads,k,hd]
         else:
             # --- Case B: keys already narrowed to `key_width` by an earlier
-            # dense layer. Gather K/V/rpb/mask down to each active query's
-            # own retained key set -- narrower attention matmul than v1.1's
-            # (which always attends over the full dense win_n keys here),
-            # and dimensionally consistent with the incoming pfa_values so
-            # the cascade update below is a straightforward elementwise op. ---
+            # dense layer. Uses the SAME fused sparse-matmul kernels stock
+            # PFT's own sparse-attention branch uses (pft_arch.py's
+            # WindowAttention.forward, pfa_indices-not-None case) instead of
+            # a plain gather+einsum: gathering K/V into a real
+            # [b_,heads,k,key_width,head_dim] tensor materializes ~1.56GiB
+            # per layer at real training batch size (measured OOM across the
+            # 22 routed layers) -- SMM_QmK/SMM_AmV compute the per-row
+            # sparse dot products without ever materializing that tensor. ---
             idx_row_k = active_idx.unsqueeze(1).unsqueeze(-1).expand(-1, num_heads, -1, key_width)
-            prev_idx_active = torch.gather(prev_indices, 2, idx_row_k)  # [b_,heads,k,key_width]
+            prev_idx_active = torch.gather(prev_indices, 2, idx_row_k)  # [b_,heads,k,key_width] -- index-only, small
 
-            idx_key = prev_idx_active.unsqueeze(-1).expand(-1, -1, -1, -1, head_dim)
-            k_narrow = torch.gather(kk.unsqueeze(2).expand(-1, -1, k, -1, -1), 3, idx_key)  # [b_,heads,k,kw,hd]
-            v_narrow = torch.gather(vv.unsqueeze(2).expand(-1, -1, k, -1, -1), 3, idx_key)
-
-            attn_active = torch.einsum('bhid,bhijd->bhij', q_active, k_narrow)  # [b_,heads,k,key_width]
+            q_flat = q_active.contiguous().view(b_ * num_heads, k, head_dim)
+            k_flat = kk.contiguous().view(b_ * num_heads, win_n, head_dim).transpose(-2, -1)  # full K, no gather
+            idx_flat = prev_idx_active.contiguous().view(b_ * num_heads, k, key_width).int()
+            attn_active = SMM_QmK.apply(q_flat, k_flat, idx_flat).view(b_, num_heads, k, key_width)
 
             rpb_active_rows = torch.gather(
                 rpb_full, 2, active_idx.unsqueeze(1).unsqueeze(-1).expand(-1, num_heads, -1, win_n))
             rpb_narrow = torch.gather(rpb_active_rows, -1, prev_idx_active)  # [b_,heads,k,key_width]
             attn_active = attn_active + rpb_narrow
-
-            if shift:
-                mask_t = params['attn_mask']
-                nw = mask_t.shape[0]
-                mask_exp = mask_t.unsqueeze(0).expand(b_ // nw, -1, -1, -1).reshape(b_, win_n, win_n)
-                idx_mask = active_idx.unsqueeze(-1).expand(-1, -1, win_n)
-                mask_active_rows = torch.gather(mask_exp, 1, idx_mask)  # [b_,k,win_n]
-                # mask has no head dim natively, but prev_idx_active does (PFA's
-                # top-k retained keys differ per head) -- broadcast across heads
-                # before the per-head narrowing gather, not after (each head's
-                # retained key set indexes into `win_n` differently).
-                mask_active_rows = mask_active_rows.unsqueeze(1).expand(-1, num_heads, -1, -1)  # [b_,heads,k,win_n]
-                mask_narrow = torch.gather(mask_active_rows, -1, prev_idx_active)  # [b_,heads,k,key_width]
-                attn_active = attn_active + mask_narrow
+            # No shift-mask re-application here -- matches stock PFT's own
+            # sparse-attention branch (pft_arch.py lines 270-284), which
+            # likewise skips it: a masked-out position would have scored a
+            # large negative value at the dense layer that established this
+            # key set, so it's already unlikely to have survived into
+            # `prev_idx_active` in the first place.
 
             attn_active = torch.softmax(attn_active, dim=-1)
 
-        out = torch.einsum('bhij,bhijd->bhid', attn_active, v_narrow) + v_lepe_active  # [b_,heads,k,hd]
+            v_flat = vv.contiguous().view(b_ * num_heads, win_n, head_dim)  # full V, no gather
+            attn_flat = attn_active.contiguous().view(b_ * num_heads, k, key_width)
+            out = SMM_AmV.apply(attn_flat, v_flat, idx_flat).view(b_, num_heads, k, head_dim)
+            out = out + v_lepe_active
         out = out.transpose(1, 2).reshape(b_, k, c)
         out = self.attn_win.proj(out)  # [b_, k, c] — real savings
 
