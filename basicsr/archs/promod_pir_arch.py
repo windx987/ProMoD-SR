@@ -257,12 +257,22 @@ class PMDPIRTL(nn.Module):
         v_lepe_active = torch.gather(v_lepe_w, 2, idx_h)     # [b_, heads, k, head_dim]
 
         rpi = params['rpi_sa']
-        rpb_full = self.attn_win.relative_position_bias_table[rpi.view(-1)].view(win_n, win_n, -1)
-        rpb_full = rpb_full.permute(2, 0, 1).contiguous()              # [heads_or_1, win_n, win_n]
-        rpb_full = rpb_full.unsqueeze(0).expand(b_, num_heads, -1, -1)  # [b_, heads, win_n, win_n]
+        # Small, batch-independent lookup table (~heads*win_n*win_n*4 bytes,
+        # e.g. 16MB for this config) -- NEVER batch-expanded. Every prior
+        # revision of this code expanded it to [b_, heads, win_n, win_n]
+        # before gathering, forcing a real ~516MB-per-layer materialization
+        # (measured) even though the bias itself doesn't vary across the
+        # batch; fancy-indexing the small table directly at the exact
+        # (head, query, key) triples needed skips that entirely.
+        rpb_table = self.attn_win.relative_position_bias_table[rpi.view(-1)].view(win_n, win_n, -1)
+        rpb_table = rpb_table.permute(2, 0, 1).contiguous()  # [heads_or_1, win_n, win_n]
+        if rpb_table.shape[0] == 1:
+            rpb_table = rpb_table.expand(num_heads, -1, -1)  # cheap broadcast (stride-0), still no batch dim
 
         prev_indices = pfa_indices[shift]
         key_width = win_n if prev_indices is None else prev_indices.shape[-1]
+
+        head_idx_row = torch.arange(num_heads, device=x.device).view(1, num_heads, 1).expand(b_, -1, k)
 
         if prev_indices is None:
             # --- Case A: no key-pruning has happened yet for this shift chain
@@ -271,8 +281,8 @@ class PMDPIRTL(nn.Module):
             # same computation v1.1's routed branch always does. ---
             attn_active = q_active @ kk.transpose(-2, -1)  # [b_, heads, k, win_n]
 
-            idx_rpb = active_idx.unsqueeze(1).unsqueeze(-1).expand(-1, num_heads, -1, win_n)
-            rpb_active = torch.gather(rpb_full, 2, idx_rpb)  # [b_, heads, k, win_n]
+            # rpb_active[b,h,i,j] = rpb_table[h, active_idx[b,i], j]
+            rpb_active = rpb_table[head_idx_row, active_idx.unsqueeze(1).expand(-1, num_heads, -1)]  # [b_,heads,k,win_n]
             attn_active = attn_active + rpb_active
 
             if shift:
@@ -303,9 +313,14 @@ class PMDPIRTL(nn.Module):
             idx_flat = prev_idx_active.contiguous().view(b_ * num_heads, k, key_width).int()
             attn_active = SMM_QmK.apply(q_flat, k_flat, idx_flat).view(b_, num_heads, k, key_width)
 
-            rpb_active_rows = torch.gather(
-                rpb_full, 2, active_idx.unsqueeze(1).unsqueeze(-1).expand(-1, num_heads, -1, win_n))
-            rpb_narrow = torch.gather(rpb_active_rows, -1, prev_idx_active)  # [b_,heads,k,key_width]
+            # rpb_narrow[b,h,i,j] = rpb_table[h, active_idx[b,i], prev_idx_active[b,h,i,j]]
+            # -- fancy-indexed directly to [b_,heads,k,key_width]; never
+            # materializes the [b_,heads,k,win_n] intermediate the two-step
+            # gather above needs (this is the branch that actually runs
+            # every routed layer in the real 701 config, so this is the one
+            # that mattered for the OOM).
+            head_idx = head_idx_row.unsqueeze(-1).expand(-1, -1, -1, key_width)
+            rpb_narrow = rpb_table[head_idx, idx_row_k, prev_idx_active]  # [b_,heads,k,key_width]
             attn_active = attn_active + rpb_narrow
             # No shift-mask re-application here -- matches stock PFT's own
             # sparse-attention branch (pft_arch.py lines 270-284), which
