@@ -1,0 +1,121 @@
+
+# Staged verification step 2 (per ProSAT-v2 plan): short smoke run on real
+# HPC data/hardware before committing to the full 500K-iter 402 run. Checks:
+#   (a) l_pix does NOT flatten dead the way 401 did at iter 50K (2000 iters
+#       won't reach that point, but watch for any early sign of the same
+#       symptom -- flat loss, zero-variance predictions).
+#   (b) router score/weight stats (logged via ProSATv2.get_router_stats())
+#       move off init and don't blow up -- proof the router has a real
+#       gradient this time, unlike 401's parameter-free heuristic.
+# Validation is disabled -- this is a training-dynamics check only.
+
+name: local_403_ProSATv3_smoketest
+model_type: PMDModel
+scale: 2
+num_gpu: 2
+manual_seed: 0
+
+find_unused_parameters: true
+
+datasets:
+  train:
+    name: DIV2K
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/DIV2K/DIV2K_train_HR
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/DIV2K/DIV2K_train_LR_bicubic/X2
+    filename_tmpl: '{}x2'
+    io_backend:
+      type: disk
+
+    gt_size: 128
+    use_hflip: true
+    use_rot: true
+
+    num_worker_per_gpu: 8
+    batch_size_per_gpu: 16
+    dataset_enlarge_ratio: 1
+    prefetch_mode: cuda
+    pin_memory: true
+    persistent_workers: true
+
+  val_1:
+    name: Set5
+    type: PairedImageDataset
+    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/GTmod12
+    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/Set5/LRbicx2_matlab
+    io_backend:
+      type: disk
+
+network_g:
+  type: ProSATv3
+  upscale: 2
+  in_chans: 3
+  embed_dim: 60
+  depths: [4, 4, 4, 4]
+  num_heads: 6
+  ffn_ratio: 2.0
+  qkv_bias: true
+  dta_m_ratio: 0.03
+  dta_min_clusters: 16
+  mod_warmup_layers: 2
+  img_range: 1.
+  dta_recluster_every: 4
+  dta_deterministic: true
+  use_sdpa: true
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+
+train:
+  ema_decay: 0.999
+  optim_g:
+    type: Muon                 # same optimizer as the real 402 run -- this
+    lr: !!float 2e-4           # smoke test must validate stability under
+    weight_decay: 0            # the ACTUAL production settings, not a
+    betas: [0.9, 0.99]         # simplified stand-in (AdamW etc).
+
+  scheduler:
+    type: CosineAnnealingRestartLR
+    periods: [500000]
+    restart_weights: [1]
+    eta_min: !!float 1e-6
+
+  total_iter: 2000
+  warmup_iter: -1
+
+  pixel_opt:
+    type: L1Loss
+    loss_weight: 1.0
+    reduction: mean
+
+val:
+  val_freq: !!float 1e6        # effectively disabled -- never reached
+  save_img: false
+
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 2
+      test_y_channel: yes
+    ssim:
+      type: calculate_ssim
+      crop_border: 2
+      test_y_channel: yes
+
+logger:
+  print_freq: 10
+  save_checkpoint_freq: !!float 5e2   # every 500 iters -- lets router stats
+                                       # be inspected offline from saved
+                                       # checkpoints without touching the
+                                       # shared train.py (in use by other
+                                       # live runs on other nodes)
+  use_tb_logger: false
+  wandb:
+    project: ~
+    resume_id: ~
+
+dist_params:
+  backend: nccl
+  port: 29500
