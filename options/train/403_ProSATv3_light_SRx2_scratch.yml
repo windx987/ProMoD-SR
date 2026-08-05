@@ -57,25 +57,19 @@ datasets:
     io_backend:
       type: disk
 
-  # Urban100 / Manga109 are where SAT, RIB/SST and the rest of the recent
-  # literature report their headline numbers -- this family has never been
-  # evaluated on them, because the materialized attention matrix is 27.8GB at
-  # Urban100 x2 LR. use_sdpa above is what makes them reachable at all.
-  val_4:
-    name: Urban100
-    type: PairedImageDataset
-    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/U100/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/U100/LRbicx2_matlab
-    io_backend:
-      type: disk
-
-  val_5:
-    name: Manga109
-    type: PairedImageDataset
-    dataroot_gt: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/M109/GTmod12
-    dataroot_lq: /mnt/pvc-shared-pvc-datasets-04a32ccd/Evaluation/M109/LRbicx2_matlab
-    io_backend:
-      type: disk
+  # Urban100 / Manga109 are DELIBERATELY ABSENT -- measured on node 3, both
+  # ProSATv2 and ProSATv3 still OOM on a 40GB A100 at Urban100 x2 LR
+  # (384x512) and even at 640x360. Removing the attention matrix via SDPA was
+  # necessary but NOT sufficient: the remaining wall is dta_assign's own
+  # quadratic intermediates -- sim_sub, mask_higher_density and
+  # masked_sim_sub are each [B, S, S] with S = 4K = 0.12N (3.06GB apiece at
+  # 640x360), plus sim_token_center at [B, N, K] (6.37GB). Amortizing the
+  # assignment 4x does not shrink any single peak.
+  #
+  # Enabling these needs a chunked dta_assign (math-identical, memory-only)
+  # or a smaller candidate pool -- tracked as follow-up work, NOT bundled
+  # here so this experiment stays one attributable change. Adding them to
+  # this config would kill the run at its first validation (iter 5000).
 
 # network structures
 network_g:
@@ -106,14 +100,23 @@ network_g:
   use_sdpa: true               # PSAA has no additive positional bias and v2
                                # already discards attn_map, so this is a
                                # math-identical drop-in (verified 4.5e-07).
-                               # Required for Urban100: the materialized
-                               # (B,h,k,m) matrix is 27.8GB there.
   # 0.7744M params (unchanged vs 402 -- pure compute/memory change).
   # Verified via model.flops():
   #    64x64 : 4.022G -> 3.015G  (25.0% cut)
   #   640x360: 5828G  -> 2603G   (55.3% cut)
   # The cut grows with resolution because what is amortized are DTA's two
   # quadratic terms (S^2*C and the token-to-center similarity N*m*C).
+  #
+  # MEASURED on an A100 (node 3, batch 1, no_grad) -- wall-clock beats the
+  # FLOPs ratio by a wide margin, because SDPA and the scatter_add merge cut
+  # memory traffic, not just arithmetic:
+  #     64x64  : 161.6ms -> 39.2ms   (4.13x)
+  #    256x256 : 2319ms  -> 532ms    (4.36x)
+  # Quality cost of stale assignments, measured by loading 402's own
+  # net_g_345000 EMA weights into v3 with no retraining (Set5 PSNR):
+  #    v2 (as trained) 38.0902 | r=1 38.0809 | r=2 38.0717 | r=4 38.0631
+  # i.e. r=4 costs 0.027dB for a 4.36x speedup -- and that is a LOWER bound,
+  # since 403 trains under r=4 natively rather than inheriting v2's weights.
 
 # path
 path:
