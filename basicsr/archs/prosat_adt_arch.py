@@ -1,8 +1,13 @@
 '''
-ProSAT-v3: ProSAT-v2's architecture with DTA's quadratic clustering amortized
-across residual groups, and the attention matrix no longer materialized.
+ProSAT-ADT (Amortized DTA): ProSAT-GR's architecture with DTA's quadratic
+clustering amortized across residual groups, and the attention matrix no
+longer materialized.
 
-Architecturally this is ProSAT-v2 (`prosat_v2_arch.py`) -- same blocks, same
+(Formerly ProSATv3 -- renamed to describe the method rather than a version.
+`ProSATv3` is still registered at the bottom of this file as an alias, since
+run 403 trained under that name and its config still requests it.)
+
+Architecturally this is ProSAT-GR (`prosat_gr_arch.py`) -- same blocks, same
 learned router + sigmoid gate, same partial-convolution GDFN gate, same
 parameter count. What changes is *how often* and *how expensively* the same
 quantities are computed. Three changes, all of which leave the mathematical
@@ -45,7 +50,7 @@ to break density ties), which are why ProSAT inference is not reproducible
 run-to-run today.
 
 `build_prosat_schedule` / `Upsample` are imported unchanged from
-`prosat_arch.py`; `GateV2` / `GDFNv2` unchanged from `prosat_v2_arch.py` (the
+`prosat_arch.py`; `GateV2` / `GDFNv2` unchanged from `prosat_gr_arch.py` (the
 partial-convolution fix is validated and orthogonal to this change). Neither
 of those files is modified -- 401/402 stay reproducible.
 '''
@@ -58,7 +63,7 @@ from basicsr.archs.arch_util import trunc_normal_
 from basicsr.utils.registry import ARCH_REGISTRY
 
 from basicsr.archs.prosat_arch import build_prosat_schedule, Upsample
-from basicsr.archs.prosat_v2_arch import GateV2, GDFNv2
+from basicsr.archs.prosat_gr_arch import GateV2, GDFNv2
 
 
 def dta_assign(x, cluster_num, subsample_factor=4, deterministic=False):
@@ -336,13 +341,13 @@ class ProSATGroupv3(nn.Module):
 
 
 @ARCH_REGISTRY.register()
-class ProSATv3(nn.Module):
-    """ProSAT-v3-Light: identical parameters and architecture to ProSATv2;
+class ProSATADT(nn.Module):
+    """ProSAT-ADT-Light: identical parameters and architecture to ProSATGR;
     DTA clustering amortized across each residual group and the attention
     matrix no longer materialized. See this file's module docstring.
 
     `dta_recluster_every=1` + `use_sdpa=False` + `dta_deterministic=False`
-    reproduces ProSATv2's forward function (the faithfulness configuration).
+    reproduces ProSATGR's forward function (the faithfulness configuration).
     """
 
     def __init__(self,
@@ -476,7 +481,7 @@ class ProSATv3(nn.Module):
 
 
 if __name__ == '__main__':
-    model = ProSATv3(upscale=2)
+    model = ProSATADT(upscale=2)
     params = sum(p.numel() for p in model.parameters())
     print(f'Params: {params / 1e6:.4f}M')
     print(f'Capacity schedule: {model.capacity_schedule}')
@@ -487,3 +492,15 @@ if __name__ == '__main__':
     with torch.no_grad():
         y = model(x)
     print(f'Forward: {tuple(x.shape)} -> {tuple(y.shape)}')
+
+
+@ARCH_REGISTRY.register()
+class ProSATv3(ProSATADT):
+    """Back-compat alias for `ProSATADT`.
+
+    Run 403 was launched under the name `ProSATv3` and its config still says
+    so. Keeping this registered means a node restart mid-run resolves
+    `network_g.type: ProSATv3` and `--auto_resume` continues normally.
+    Do not use this name for new experiments.
+    """
+    pass

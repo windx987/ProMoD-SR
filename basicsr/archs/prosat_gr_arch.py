@@ -1,7 +1,11 @@
 '''
-ProSAT-v2: ProSAT's DTA-merged global attention, with ProMoD v1.1's actual
-(trainable) Mixture-of-Depths mechanism in place of ProSAT's own
-parameter-free routing.
+ProSAT-GR (Gated Router): ProSAT's DTA-merged global attention, with the
+gather/scatter MoD mechanism's actual trainable router in place of ProSAT's
+own parameter-free routing.
+
+(Formerly ProSATv2 -- renamed to describe the method rather than a version.
+`ProSATv2` is still registered at the bottom of this file as an alias, since
+run 402 trained under that name and its config still requests it.)
 
 Two things changed vs `prosat_arch.py`, both necessary together (see this
 experiment's plan for the full investigation):
@@ -234,7 +238,7 @@ class ProSATGroupv2(nn.Module):
 
 
 @ARCH_REGISTRY.register()
-class ProSATv2(nn.Module):
+class ProSATGR(nn.Module):
     """ProSAT-v2-Light: same defaults as ProSAT (`prosat_arch.py`) -- C=60,
     4 groups x 4 blocks, 6 heads, GDFN ratio 2.0, DTA 3% / min 16 clusters,
     same MoD schedule -- with the trainable-router + partial-conv fixes
@@ -366,7 +370,7 @@ class ProSATv2(nn.Module):
 
 
 if __name__ == '__main__':
-    model = ProSATv2(upscale=2)
+    model = ProSATGR(upscale=2)
     params = sum(p.numel() for p in model.parameters())
     print(f'Params: {params / 1e6:.4f}M')
     print(f'Capacity schedule: {model.capacity_schedule}')
@@ -377,3 +381,16 @@ if __name__ == '__main__':
         y = model(x)
     print(f'Forward: {tuple(x.shape)} -> {tuple(y.shape)}')
     print(f'Router stats (should be nonzero-init, non-degenerate): {model.get_router_stats()}')
+
+
+@ARCH_REGISTRY.register()
+class ProSATv2(ProSATGR):
+    """Back-compat alias for `ProSATGR`.
+
+    Run 402 was launched under the name `ProSATv2` and its config still says
+    so. Keeping this registered means a node restart mid-run resolves
+    `network_g.type: ProSATv2` and `--auto_resume` continues normally.
+    Checkpoints are unaffected either way -- a state_dict does not record the
+    class it came from. Do not use this name for new experiments.
+    """
+    pass

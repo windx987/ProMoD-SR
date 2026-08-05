@@ -47,7 +47,7 @@ datasets:
       type: disk
 
 network_g:
-  type: ProSATv2
+  type: ProSATGR
   upscale: 2
   in_chans: 3
   embed_dim: 60

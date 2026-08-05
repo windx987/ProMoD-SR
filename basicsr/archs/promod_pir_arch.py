@@ -4,7 +4,7 @@ ProMoD-PIR (PMDPIRModel): PFA-Informed Routing.
 Where v1.0/v1.1 bolt a from-scratch router onto PFT, PIR is a redesign of
 MoD that is co-designed with PFA (Progressive Focusing Attention, PFT's own
 cross-layer sparse-attention cascade, see pft_arch.py). Two documented gaps
-in v1.1 (basicsr/archs/promod_v1_1_arch.py) motivate this file, see
+in v1.1 (basicsr/archs/promod_gs_arch.py) motivate this file, see
 ARCH.md / this experiment's plan for the full investigation:
 
 1. v1.1's router (`nn.Linear(dim, 1, bias=False)`) is learned entirely from
@@ -64,7 +64,7 @@ from basicsr.archs.pft_arch import (
     SMM_QmK, SMM_AmV,
 )
 from basicsr.archs.promod_arch import build_capacity_schedule
-from basicsr.archs.promod_v1_1_arch import RoutedConvFFN
+from basicsr.archs.promod_gs_arch import RoutedConvFFN
 
 
 class PMDPIRTL(nn.Module):
@@ -588,7 +588,7 @@ class PMDPIRB(nn.Module):
 @ARCH_REGISTRY.register()
 class PMDPIRModel(nn.Module):
     """ProMoD-PIR: PFT + PFA-Informed Routing. See module docstring at the
-    top of this file for what changed vs v1.1 (promod_v1_1_arch.py) and why.
+    top of this file for what changed vs v1.1 (promod_gs_arch.py) and why.
     """
 
     def __init__(self,
