@@ -219,18 +219,31 @@ class PMDTL(nn.Module):
         return x, pfa_list
 
     def flops(self, input_resolution=None):
+        """HONEST cost of v1.0's mask-multiply routing: identical to dense.
+
+        v1.0 does not gather or skip anything. `forward()` runs `attn_win` over
+        the full windows and `convffn` over every token, then multiplies the
+        OUTPUTS by `active_mask` (`x_attn = x_attn * active_mask`). Zeroing a
+        result after computing it saves no arithmetic, so every term below is
+        charged at full density -- the `* r` factors this method used to apply
+        described an execution path that does not exist.
+
+        The upside, relative to v1.1: because attention still goes through
+        `attn_win`, v1.0 keeps PFA's progressive key narrowing. It saves
+        nothing, but it does not actively cost more the way v1.1's routed path
+        does (which abandons that narrowing -- see PMDTLv1_1.flops).
+        """
         flops = 0
         h, w = self.input_resolution if input_resolution is None else input_resolution
-        r = self.capacity_ratio
 
-        flops += self.dim * 3 * self.dim * h * w
+        flops += self.dim * 3 * self.dim * h * w                                    # wqkv
 
         nw = h * w / self.window_size / self.window_size
-        flops += nw * self.attn_win.flops(self.window_size * self.window_size) * r
+        flops += nw * self.attn_win.flops(self.window_size * self.window_size)      # PFA-narrowed
 
-        flops += 2 * h * w * self.dim * self.dim * self.mlp_ratio * r
-        flops += h * w * self.dim * (self.convffn_kernel_size ** 2) * self.mlp_ratio * r
-        flops += h * w * self.dim * (self.convlepe_kernel_size ** 2)
+        flops += 2 * h * w * self.dim * self.dim * self.mlp_ratio                   # convffn fc1+fc2
+        flops += h * w * self.dim * (self.convffn_kernel_size ** 2) * self.mlp_ratio  # dwconv
+        flops += h * w * self.dim * (self.convlepe_kernel_size ** 2)                # LePE
 
         return flops
 

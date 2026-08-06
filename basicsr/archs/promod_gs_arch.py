@@ -321,9 +321,25 @@ class PMDTLv1_1(nn.Module):
         flops += self.dim * 3 * self.dim * h * w  # wqkv, dense (unchanged from v1.0)
 
         nw = h * w / self.window_size / self.window_size
-        # attention: gathered Q -> honest r scaling (unchanged from v1.0; Q@K^T,
-        # Attn@V, and proj are all linear in query-row count)
-        flops += nw * self.attn_win.flops(self.window_size * self.window_size) * r
+        win_n = self.window_size * self.window_size
+        if r >= 1.0:
+            # Dense path: goes through WindowAttention, which DOES use PFA's
+            # narrowed key set. attn_win.flops() models that cascade correctly
+            # (charges num_topk[L-2] for Q@K^T, num_topk[L] for Attn@V).
+            flops += nw * self.attn_win.flops(win_n)
+        else:
+            # Routed path: gathers QUERIES but attends to ALL win_n keys --
+            # `attn = q_active @ kk.transpose(-2,-1)` with kk of shape
+            # [b_, heads, win_n, head_dim] (see forward(): "K/V stay full").
+            # PFA's narrowing is bypassed entirely, so charging
+            # attn_win.flops() * r was wrong twice over: it credited the
+            # narrowed key width AND the r discount, neither of which the
+            # routed path takes. For num_topk=32 layers that understated the
+            # real cost by ~18x, and made 501/502/503 look like FLOPs
+            # reductions when they are in fact ABOVE dense.
+            kq = math.ceil(r * win_n)                       # gathered query rows
+            flops += nw * (2 * kq * win_n * self.dim        # Q@K^T and Attn@V, full-width keys
+                           + kq * self.dim * self.dim)      # proj on active rows
 
         # FFN: fc1 (dense, factor 1) + fc2 (routed, factor r). v1.0's flops()
         # scaled BOTH by r (`2 * ... * r`) — optimistic, since fc1 must stay

@@ -226,7 +226,14 @@ class PMDTLMoE(nn.Module):
         flops += self.dim * 3 * self.dim * h * w
 
         nw = h * w / self.window_size / self.window_size
-        flops += nw * self.attn_win.flops(self.window_size * self.window_size) * r
+        # No `* r`: like v1.0, MoE routes by mask-multiply -- `attn_win` runs over
+        # the FULL windows and the OUTPUT is then multiplied by `active_mask`
+        # (`x_attn = x_attn * active_mask`). Zeroing a result after computing it
+        # saves no arithmetic. The `* r` this line used to carry described an
+        # execution path that does not exist, and understated 504/505 by ~10%.
+        # (Attention does still go through attn_win, so PFA's key narrowing is
+        # retained -- unlike v1.1's routed path, which forfeits it.)
+        flops += nw * self.attn_win.flops(self.window_size * self.window_size)
 
         # fc1 (dense) + dwconv (dense) + e dense fc2 branches (no r scaling: MoE
         # runs on every token regardless of MoD's mask) + router (negligible)
